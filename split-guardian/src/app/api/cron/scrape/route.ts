@@ -44,6 +44,11 @@ function parseRatio(ratioStr: string) {
 
 export async function GET(request: Request) {
   try {
+    const authHeader = request.headers.get('authorization');
+    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     console.log('Cron Scrape Triggered');
     
     // 1. Fetch Global Settings
