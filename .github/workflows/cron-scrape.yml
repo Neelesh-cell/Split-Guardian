@@ -1,0 +1,16 @@
+name: 15-Minute Scrape Cron
+
+on:
+  schedule:
+    # Runs every 15 minutes between 13:00 and 21:00 UTC, Monday to Friday
+    - cron: '*/15 13-21 * * 1-5'
+  workflow_dispatch: # Allows you to manually trigger it from the GitHub Actions tab
+
+jobs:
+  ping-scrape-endpoint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Vercel Cron Endpoint
+        run: |
+          curl -X GET "${{ vars.VERCEL_URL }}/api/cron/scrape" \
+               -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
