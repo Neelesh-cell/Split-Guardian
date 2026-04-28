@@ -9,6 +9,7 @@ export default function Dashboard() {
   const [settings, setSettings] = useState<any>({ allow_reverse_splits: false, trade_size_dollars: 100, is_auto_buy_enabled: true });
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
 
   const fetchDashboardData = async (manualSync = false) => {
     if (manualSync) setIsSyncing(true);
@@ -65,9 +66,24 @@ export default function Dashboard() {
   }, []);
 
   const updateSettings = async (key: string, value: any) => {
+    const oldSettings = { ...settings };
     const newSettings = { ...settings, [key]: value };
+    
+    // Optimistic update
     setSettings(newSettings);
-    await supabase.from('settings').update({ [key]: value }).eq('id', 1);
+    setSavingSettings(true);
+    
+    try {
+      const { error } = await supabase.from('settings').update({ [key]: value }).eq('id', 1);
+      if (error) throw error;
+    } catch (err) {
+      console.error('Failed to update settings:', err);
+      // Revert on failure
+      setSettings(oldSettings);
+      alert('Failed to save settings. Check your database permissions.');
+    } finally {
+      setSavingSettings(false);
+    }
   };
 
   if (loading) return <div className="min-h-screen bg-gray-950 text-white flex items-center justify-center">Loading Split-Guardian...</div>;
@@ -103,7 +119,18 @@ export default function Dashboard() {
           
           {/* Settings Panel */}
           <div className="bg-gray-900/50 backdrop-blur-md border border-gray-800 p-4 md:p-6 rounded-2xl shadow-xl lg:col-span-1">
-            <h2 className="text-xl font-bold mb-6 text-indigo-300">Execution Settings</h2>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold text-indigo-300">Execution Settings</h2>
+              {savingSettings && (
+                <span className="flex items-center gap-2 text-xs font-medium text-indigo-400">
+                  <svg className="animate-spin h-3 w-3 text-indigo-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Saving...
+                </span>
+              )}
+            </div>
             
             <div className="space-y-6">
               <div className="flex justify-between items-center">
