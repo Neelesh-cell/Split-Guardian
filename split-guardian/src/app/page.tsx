@@ -36,7 +36,29 @@ export default function Dashboard() {
   useEffect(() => {
     fetchDashboardData();
     const interval = setInterval(fetchDashboardData, 15000); // Refresh every 15s
-    return () => clearInterval(interval);
+
+    // Set up Realtime Subscription
+    const channel = supabase.channel('public:trade_log')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'trade_log',
+        },
+        (payload) => {
+          setTrades((currentTrades) => {
+            const newTrades = [payload.new, ...currentTrades];
+            return newTrades.slice(0, 20); // Keep only the latest 20
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      clearInterval(interval);
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const updateSettings = async (key: string, value: any) => {
@@ -48,11 +70,11 @@ export default function Dashboard() {
   if (loading) return <div className="min-h-screen bg-gray-950 text-white flex items-center justify-center">Loading Split-Guardian...</div>;
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 p-8 font-sans selection:bg-indigo-500/30">
+    <div className="min-h-screen bg-gray-950 text-gray-100 p-4 md:p-8 font-sans selection:bg-indigo-500/30">
       <div className="max-w-7xl mx-auto space-y-8">
         
         {/* Header / P&L Top Bar */}
-        <header className="flex justify-between items-center bg-gray-900/50 backdrop-blur-md border border-gray-800 p-6 rounded-2xl shadow-2xl">
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 md:gap-0 bg-gray-900/50 backdrop-blur-md border border-gray-800 p-4 md:p-6 rounded-2xl shadow-2xl">
           <div>
             <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">
               Split-Guardian
@@ -60,16 +82,16 @@ export default function Dashboard() {
             <p className="text-gray-400 text-sm mt-1">High-Precision Stock Split Automation</p>
           </div>
           
-          <div className="flex gap-8 items-center">
-            <div className="flex flex-col items-end">
-              <span className="text-sm text-gray-500 uppercase tracking-wider font-semibold">Net P/L</span>
-              <span className={`text-2xl font-bold ${account?.netPl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+          <div className="flex w-full md:w-auto justify-between md:justify-end gap-4 md:gap-8 items-center">
+            <div className="flex flex-col items-start md:items-end">
+              <span className="text-xs md:text-sm text-gray-500 uppercase tracking-wider font-semibold">Net P/L</span>
+              <span className={`text-xl md:text-2xl font-bold ${account?.netPl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                 {account?.netPl >= 0 ? '+' : ''}${account?.netPl?.toFixed(2) || '0.00'}
               </span>
             </div>
             <div className="flex flex-col items-end">
-              <span className="text-sm text-gray-500 uppercase tracking-wider font-semibold">Equity</span>
-              <span className="text-2xl font-bold text-white">${account?.equity?.toLocaleString(undefined, {minimumFractionDigits: 2}) || '0.00'}</span>
+              <span className="text-xs md:text-sm text-gray-500 uppercase tracking-wider font-semibold">Equity</span>
+              <span className="text-xl md:text-2xl font-bold text-white">${account?.equity?.toLocaleString(undefined, {minimumFractionDigits: 2}) || '0.00'}</span>
             </div>
           </div>
         </header>
@@ -77,7 +99,7 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
           {/* Settings Panel */}
-          <div className="bg-gray-900/50 backdrop-blur-md border border-gray-800 p-6 rounded-2xl shadow-xl lg:col-span-1">
+          <div className="bg-gray-900/50 backdrop-blur-md border border-gray-800 p-4 md:p-6 rounded-2xl shadow-xl lg:col-span-1">
             <h2 className="text-xl font-bold mb-6 text-indigo-300">Execution Settings</h2>
             
             <div className="space-y-6">
@@ -121,8 +143,17 @@ export default function Dashboard() {
           </div>
 
           {/* Signal Feed */}
-          <div className="bg-gray-900/50 backdrop-blur-md border border-gray-800 p-6 rounded-2xl shadow-xl lg:col-span-2 overflow-hidden flex flex-col">
-            <h2 className="text-xl font-bold mb-6 text-cyan-300">Live Signal Feed</h2>
+          <div className="bg-gray-900/50 backdrop-blur-md border border-gray-800 p-4 md:p-6 rounded-2xl shadow-xl lg:col-span-2 overflow-hidden flex flex-col">
+            <div className="flex items-center gap-3 mb-6">
+              <h2 className="text-xl font-bold text-cyan-300">Live Signal Feed</h2>
+              <div className="flex items-center gap-2 px-2.5 py-1 bg-emerald-500/10 rounded-full border border-emerald-500/20">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Live</span>
+              </div>
+            </div>
             
             <div className="overflow-x-auto flex-1">
               <table className="w-full text-left text-sm">
