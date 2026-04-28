@@ -10,6 +10,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [localTradeSize, setLocalTradeSize] = useState<string>('100');
 
   const fetchDashboardData = async (manualSync = false) => {
     if (manualSync) setIsSyncing(true);
@@ -27,7 +28,10 @@ export default function Dashboard() {
 
       // Fetch Settings
       const { data: setData } = await supabase.from('settings').select('*').eq('id', 1).single();
-      if (setData) setSettings(setData);
+      if (setData) {
+        setSettings(setData);
+        setLocalTradeSize(String(setData.trade_size_dollars));
+      }
 
     } catch (err) {
       console.error(err);
@@ -64,6 +68,27 @@ export default function Dashboard() {
       supabase.removeChannel(channel);
     };
   }, []);
+
+  const handleTradeSizeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    if (/^\d*$/.test(val)) {
+      setLocalTradeSize(val);
+    }
+  };
+
+  const handleTradeSizeBlur = () => {
+    let finalVal = parseInt(localTradeSize, 10);
+    if (isNaN(finalVal) || finalVal <= 0) {
+      finalVal = 10;
+      setLocalTradeSize('10');
+    } else {
+      setLocalTradeSize(String(finalVal));
+    }
+    
+    if (finalVal !== settings.trade_size_dollars) {
+      updateSettings('trade_size_dollars', finalVal);
+    }
+  };
 
   const updateSettings = async (key: string, value: any) => {
     const oldSettings = { ...settings };
@@ -192,9 +217,11 @@ export default function Dashboard() {
               <div>
                 <label className="block text-gray-300 font-medium mb-2">Trade Size ($ per buy)</label>
                 <input 
-                  type="number" 
-                  value={settings.trade_size_dollars}
-                  onChange={(e) => updateSettings('trade_size_dollars', Number(e.target.value))}
+                  type="text" 
+                  inputMode="numeric"
+                  value={localTradeSize}
+                  onChange={handleTradeSizeChange}
+                  onBlur={handleTradeSizeBlur}
                   className="w-full bg-gray-950 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-indigo-500 transition-colors"
                 />
               </div>
