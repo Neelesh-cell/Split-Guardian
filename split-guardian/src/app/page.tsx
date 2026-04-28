@@ -8,8 +8,10 @@ export default function Dashboard() {
   const [trades, setTrades] = useState<any[]>([]);
   const [settings, setSettings] = useState<any>({ allow_reverse_splits: false, trade_size_dollars: 100, is_auto_buy_enabled: true });
   const [loading, setLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
 
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = async (manualSync = false) => {
+    if (manualSync) setIsSyncing(true);
     try {
       // Fetch Alpaca Account
       const accRes = await fetch('/api/alpaca/account');
@@ -30,12 +32,13 @@ export default function Dashboard() {
       console.error(err);
     } finally {
       setLoading(false);
+      if (manualSync) setIsSyncing(false);
     }
   };
 
   useEffect(() => {
     fetchDashboardData();
-    const interval = setInterval(fetchDashboardData, 15000); // Refresh every 15s
+    const interval = setInterval(() => fetchDashboardData(), 15000); // Refresh every 15s
 
     // Set up Realtime Subscription
     const channel = supabase.channel('public:trade_log')
@@ -134,10 +137,11 @@ export default function Dashboard() {
               </div>
 
               <button 
-                onClick={fetchDashboardData}
-                className="w-full bg-gray-800 hover:bg-gray-700 text-white font-medium py-2 rounded-lg transition-colors border border-gray-700"
+                onClick={() => fetchDashboardData(true)}
+                disabled={isSyncing}
+                className={`w-full font-medium py-2 rounded-lg transition-colors border ${isSyncing ? 'bg-gray-700 text-gray-400 border-gray-600 cursor-not-allowed' : 'bg-gray-800 hover:bg-gray-700 text-white border-gray-700'}`}
               >
-                Force Refresh Sync
+                {isSyncing ? 'Syncing...' : 'Force Refresh Sync'}
               </button>
             </div>
           </div>
