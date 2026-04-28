@@ -86,6 +86,42 @@ export default function Dashboard() {
     }
   };
 
+  const downloadCSV = () => {
+    if (trades.length === 0) return;
+    
+    const headers = ['Date', 'Time (Local)', 'Ticker', 'Type', 'Ratio', 'Trade Size', 'Status'];
+    const csvRows = [headers.join(',')];
+    
+    trades.forEach(t => {
+      const d = new Date(t.created_at);
+      const time = new Intl.DateTimeFormat('default', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(d);
+      const date = new Intl.DateTimeFormat('default', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+      
+      const row = [
+        date,
+        time,
+        t.ticker,
+        t.split_type,
+        `"${t.split_ratio}"`,
+        settings.trade_size_dollars,
+        `"${t.execution_status}"`
+      ];
+      csvRows.push(row.join(','));
+    });
+    
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    
+    const link = document.createElement('a');
+    const todayStr = new Date().toISOString().split('T')[0];
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Split-Guardian-Logs-${todayStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   if (loading) return <div className="min-h-screen bg-gray-950 text-white flex items-center justify-center">Loading Split-Guardian...</div>;
 
   return (
@@ -175,21 +211,31 @@ export default function Dashboard() {
 
           {/* Signal Feed */}
           <div className="bg-gray-900/50 backdrop-blur-md border border-gray-800 p-4 md:p-6 rounded-2xl shadow-xl lg:col-span-2 overflow-hidden flex flex-col">
-            <div className="flex items-center gap-3 mb-6">
-              <h2 className="text-xl font-bold text-cyan-300">Live Signal Feed</h2>
-              <div className="flex items-center gap-2 px-2.5 py-1 bg-emerald-500/10 rounded-full border border-emerald-500/20">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                </span>
-                <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Live</span>
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <h2 className="text-xl font-bold text-cyan-300">Live Signal Feed</h2>
+                <div className="flex items-center gap-2 px-2.5 py-1 bg-emerald-500/10 rounded-full border border-emerald-500/20">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  </span>
+                  <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Live</span>
+                </div>
               </div>
+              <button 
+                onClick={downloadCSV}
+                className="flex items-center gap-2 text-sm bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded-lg transition-colors border border-gray-700"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                <span className="hidden sm:inline">Download CSV</span>
+              </button>
             </div>
             
             <div className="overflow-x-auto flex-1">
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="text-gray-500 uppercase tracking-wider border-b border-gray-800">
+                    <th className="pb-3 px-4 font-semibold hidden md:table-cell">Date</th>
                     <th className="pb-3 px-4 font-semibold">Time</th>
                     <th className="pb-3 px-4 font-semibold">Ticker</th>
                     <th className="pb-3 px-4 font-semibold">Type</th>
@@ -199,24 +245,38 @@ export default function Dashboard() {
                 </thead>
                 <tbody className="divide-y divide-gray-800/50">
                   {trades.length === 0 ? (
-                    <tr><td colSpan={5} className="py-8 text-center text-gray-500">No signals logged yet.</td></tr>
-                  ) : trades.map((t) => (
-                    <tr key={t.id} className="hover:bg-gray-800/20 transition-colors">
-                      <td className="py-3 px-4 text-gray-400">{new Date(t.created_at).toLocaleTimeString()}</td>
-                      <td className="py-3 px-4 font-bold text-white">{t.ticker}</td>
-                      <td className="py-3 px-4">
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${t.split_type === 'forward' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
-                          {t.split_type}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-gray-300">{t.split_ratio}</td>
-                      <td className="py-3 px-4">
-                        <span className={`text-sm ${t.execution_status.includes('Executed') ? 'text-emerald-400' : t.execution_status.includes('Failed') ? 'text-rose-400' : 'text-amber-400'}`}>
-                          {t.execution_status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                    <tr><td colSpan={6} className="py-8 text-center text-gray-500">No signals logged yet.</td></tr>
+                  ) : trades.map((t) => {
+                    const d = new Date(t.created_at);
+                    const time = new Intl.DateTimeFormat('default', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(d);
+                    const date = new Intl.DateTimeFormat('default', { month: 'short', day: 'numeric' }).format(d);
+                    const isToday = new Date().toDateString() === d.toDateString();
+
+                    return (
+                      <tr key={t.id} className="hover:bg-gray-800/20 transition-colors">
+                        <td className="py-3 px-4 text-slate-400 hidden md:table-cell whitespace-nowrap">
+                          {date}
+                        </td>
+                        <td className="py-3 px-4 text-slate-400 whitespace-nowrap">
+                          <span className="md:hidden text-xs mr-2">{date} |</span>
+                          <span>{time}</span>
+                          {isToday && <span className="ml-2 text-[10px] font-bold text-emerald-500 uppercase tracking-wider bg-emerald-500/10 px-1.5 py-0.5 rounded">Today</span>}
+                        </td>
+                        <td className="py-3 px-4 font-bold text-white">{t.ticker}</td>
+                        <td className="py-3 px-4">
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${t.split_type === 'forward' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                            {t.split_type}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-gray-300">{t.split_ratio}</td>
+                        <td className="py-3 px-4">
+                          <span className={`text-sm ${t.execution_status.includes('Executed') ? 'text-emerald-400' : t.execution_status.includes('Failed') ? 'text-rose-400' : 'text-amber-400'}`}>
+                            {t.execution_status}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
