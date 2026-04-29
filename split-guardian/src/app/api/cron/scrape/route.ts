@@ -368,6 +368,39 @@ export async function GET(request: Request) {
     const { data: settingsData } = await supabase.from('settings').select('*').eq('id', 1).single();
     const settings = settingsData || { allow_reverse_splits: false, trade_size_dollars: 100, is_auto_buy_enabled: true };
 
+    // 1.5. THE HUNTER: Auto-Retry Engine
+    console.log('--- Checking for Pending Retries ---');
+    const { data: pendingRetries } = await supabase
+      .from('trade_log')
+      .select('*')
+      .like('execution_status', 'Pending%')
+      .lte('retry_at', new Date().toISOString());
+
+    if (pendingRetries && pendingRetries.length > 0) {
+      console.log(`Found ${pendingRetries.length} pending trades ready for retry.`);
+      for (const retry of pendingRetries) {
+        console.log(`[Retry] Attempting ${retry.ticker}...`);
+        const tradeRes = await executeMarketBuy(retry.ticker, Number(settings.trade_size_dollars));
+        
+        let newStatus = '';
+        if (tradeRes.success) {
+          newStatus = `Executed - Buy ${tradeRes.qty} shares`;
+          console.log(`[Retry Success] ${retry.ticker}: ${newStatus}`);
+        } else {
+          // Failed a second time -> mark persistent
+          newStatus = `Skipped - Persistent Halt (${tradeRes.error.substring(0, 50)})`;
+          console.warn(`[Retry Failed] ${retry.ticker}: ${newStatus}`);
+        }
+        
+        await supabase
+          .from('trade_log')
+          .update({ execution_status: newStatus, retry_at: null })
+          .eq('id', retry.id);
+      }
+    } else {
+      console.log('No pending retries at this time.');
+    }
+
     // 2. Scrape all 4 sources concurrently (4-source redundancy)
     const [benzingaResults, stockTitanResults, hedgeFollowResults, tipRanksResults] = await Promise.all([
       scrapeBenzinga(),
@@ -437,7 +470,8 @@ export async function GET(request: Request) {
 
       // Execution Logic
       let executionStatus = 'Processed';
-      let shouldLog = false; // Only log Executed, Failed, or Restricted Type
+      let shouldLog = false;
+      let retryAt = null;
 
       if (!settings.is_auto_buy_enabled) {
         executionStatus = 'Skipped - Auto-Buy Disabled';
@@ -453,33 +487,45 @@ export async function GET(request: Request) {
           executionStatus = `Executed - Buy ${tradeRes.qty} shares`;
           shouldLog = true;
         } else {
-          // If it's a price issue, silently skip without logging
-          const isPriceIssue = tradeRes.error.includes('Failed to fetch quote') || 
-                               tradeRes.error.includes('Invalid ask price') ||
-                               tradeRes.error.includes('Calculated quantity is 0');
+          const errStr = tradeRes.error || '';
           
-          if (isPriceIssue) {
-            executionStatus = 'Skipped - Out of Scope (No Quote/Invalid Price)';
-            shouldLog = false; // Do not log to DB
-            console.warn(`[Skip - Price Issue] ${signal.ticker}: ${tradeRes.error}`);
+          if (errStr.includes('ASSET_INACTIVE')) {
+            executionStatus = 'Pending - Exchange Halt';
+            shouldLog = true;
+            retryAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+            console.warn(`[Skip - Halt] ${signal.ticker}: Asset Inactive`);
+          } else if (errStr.includes('NOT_TRADABLE')) {
+            executionStatus = 'Pending - OTC Restricted';
+            shouldLog = true;
+            retryAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+            console.warn(`[Skip - OTC] ${signal.ticker}: Not Tradable`);
+          } else if (errStr.includes('Failed to fetch quote') || errStr.includes('Invalid ask price') || errStr.includes('Calculated quantity is 0') || errStr.includes('ASSET_NOT_FOUND')) {
+            executionStatus = 'Pending - Market Illiquidity';
+            shouldLog = true;
+            retryAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+            console.warn(`[Skip - Price] ${signal.ticker}: ${errStr.substring(0, 50)}`);
           } else {
             // High-priority issue (e.g. Insufficient funds, API key)
-            executionStatus = `Failed - ${tradeRes.error}`;
+            executionStatus = `Failed - ${errStr.substring(0, 50)}`;
             shouldLog = true;
-            console.error(`[Trade Failed] ${signal.ticker}: ${tradeRes.error}`);
+            console.error(`[Trade Failed] ${signal.ticker}: ${errStr}`);
           }
         }
       }
 
       // Log to Supabase only if it's a meaningful action
       if (shouldLog) {
-        await supabase.from('trade_log').insert({
+        const payload: any = {
           ticker: signal.ticker,
           split_ratio: signal.ratio,
           source_site: signal.source,
           split_type: splitType,
           execution_status: executionStatus,
-        });
+        };
+        if (retryAt) {
+          payload.retry_at = retryAt;
+        }
+        await supabase.from('trade_log').insert(payload);
       }
 
       processed.push({

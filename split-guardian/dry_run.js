@@ -196,7 +196,13 @@ async function run() {
     } else if (parsed.type === 'reverse' && !settings.allow_reverse_splits) {
       report.push({ ...signal, split_type: parsed.type, action: 'Skipped - Restricted Type (Logged Once)' });
     } else {
-      report.push({ ...signal, split_type: parsed.type, action: `Auto-Buy Triggered (Simulated) — $${settings.trade_size_dollars} (Logged)` });
+      // Simulate 10% chance of a halt/illiquid stock
+      const isHalt = Math.random() < 0.1;
+      if (isHalt) {
+        report.push({ ...signal, split_type: parsed.type, action: 'Pending - Exchange Halt (Retry in 2hrs)' });
+      } else {
+        report.push({ ...signal, split_type: parsed.type, action: `Auto-Buy Triggered (Simulated) — $${settings.trade_size_dollars} (Logged)` });
+      }
     }
   }
 

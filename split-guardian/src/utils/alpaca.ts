@@ -19,6 +19,25 @@ export async function getAlpacaAccount() {
   return res.json();
 }
 
+export async function getAsset(ticker: string) {
+  const res = await fetch(`${ALPACA_BASE_URL}/v2/assets/${ticker}`, {
+    headers: {
+      'APCA-API-KEY-ID': ALPACA_API_KEY,
+      'APCA-API-SECRET-KEY': ALPACA_API_SECRET,
+      'Accept': 'application/json'
+    },
+    cache: 'no-store'
+  });
+  
+  if (!res.ok) {
+    if (res.status === 404) {
+      throw new Error(`ASSET_NOT_FOUND: ${ticker}`);
+    }
+    throw new Error(`Failed to fetch asset info for ${ticker}: ${await res.text()}`);
+  }
+  return res.json();
+}
+
 export async function getLatestQuote(ticker: string) {
   // Use Alpaca Data API to get the latest quote
   // Paper keys can access the data API using the data API base URL
@@ -41,6 +60,24 @@ export async function getLatestQuote(ticker: string) {
 
 export async function executeMarketBuy(ticker: string, tradeSizeDollars: number) {
   try {
+    // 1. Pre-Trade Verification (Asset Check)
+    try {
+      const asset = await getAsset(ticker);
+      if (asset.status !== 'active') {
+        throw new Error(`ASSET_INACTIVE`);
+      }
+      if (!asset.tradable) {
+        throw new Error(`NOT_TRADABLE`);
+      }
+    } catch (e: any) {
+      // Re-throw known asset errors directly
+      if (e.message.includes('ASSET_INACTIVE') || e.message.includes('NOT_TRADABLE') || e.message.includes('ASSET_NOT_FOUND')) {
+        throw e;
+      }
+      throw new Error(`Asset verification failed: ${e.message}`);
+    }
+
+    // 2. Quote Check
     const askPrice = await getLatestQuote(ticker);
     if (!askPrice || askPrice <= 0) {
       throw new Error(`Invalid ask price for ${ticker}: ${askPrice}`);
