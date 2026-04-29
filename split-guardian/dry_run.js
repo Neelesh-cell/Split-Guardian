@@ -192,11 +192,11 @@ async function run() {
     }
 
     if (!settings.is_auto_buy_enabled) {
-      report.push({ ...signal, split_type: parsed.type, action: 'Skipped — Auto-Buy Disabled' });
+      report.push({ ...signal, split_type: parsed.type, action: 'Skipped — Auto-Buy Disabled (Not Logged)' });
     } else if (parsed.type === 'reverse' && !settings.allow_reverse_splits) {
-      report.push({ ...signal, split_type: parsed.type, action: 'Manual Review Required (Reverse Split)' });
+      report.push({ ...signal, split_type: parsed.type, action: 'Skipped - Restricted Type (Logged Once)' });
     } else {
-      report.push({ ...signal, split_type: parsed.type, action: `Auto-Buy Triggered (Simulated) — $${settings.trade_size_dollars}` });
+      report.push({ ...signal, split_type: parsed.type, action: `Auto-Buy Triggered (Simulated) — $${settings.trade_size_dollars} (Logged)` });
     }
   }
 

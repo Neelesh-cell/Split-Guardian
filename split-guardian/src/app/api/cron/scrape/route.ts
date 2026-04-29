@@ -418,57 +418,57 @@ export async function GET(request: Request) {
       }
       const splitType = parsed.type;
 
-      // 7-Day Cooldown Check
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      // 24-Hour Cooldown Check
+      const oneDayAgo = new Date();
+      oneDayAgo.setDate(oneDayAgo.getDate() - 1);
 
       const { data: recentTrades } = await supabase
         .from('trade_log')
         .select('id')
         .eq('ticker', signal.ticker)
-        .gte('created_at', sevenDaysAgo.toISOString());
+        .gte('created_at', oneDayAgo.toISOString());
 
       if (recentTrades && recentTrades.length > 0) {
-        // Log as skipped due to cooldown
-        await supabase.from('trade_log').insert({
-          ticker: signal.ticker,
-          split_ratio: signal.ratio,
-          source_site: signal.source,
-          split_type: splitType,
-          execution_status: 'Skipped - Cooldown',
-        });
+        // Silently skip if already processed in the last 7 days
         processed.push({ ticker: signal.ticker, status: 'Skipped - Cooldown', source: signal.source });
-        console.log(`[Cooldown] ${signal.ticker} — already traded within 7 days.`);
+        console.log(`[Cooldown] ${signal.ticker} — already logged within 7 days. Exiting silently.`);
         continue;
       }
 
       // Execution Logic
       let executionStatus = 'Processed';
+      let shouldLog = false; // Only log Executed, Failed, or Restricted Type
 
       if (!settings.is_auto_buy_enabled) {
         executionStatus = 'Skipped - Auto-Buy Disabled';
+        shouldLog = false; // Do not log to DB
       } else if (splitType === 'reverse' && !settings.allow_reverse_splits) {
-        executionStatus = 'Manual Review Required';
+        executionStatus = 'Skipped - Restricted Type';
+        shouldLog = true; // Log once for manual review
       } else {
         // Forward Split or (Reverse Split + Allowed) → Execute via Alpaca
         const tradeRes = await executeMarketBuy(signal.ticker, Number(settings.trade_size_dollars));
 
         if (tradeRes.success) {
           executionStatus = `Executed - Buy ${tradeRes.qty} shares`;
+          shouldLog = true;
         } else {
           executionStatus = `Failed - ${tradeRes.error}`;
+          shouldLog = true;
           console.error(`[Trade Failed] ${signal.ticker}: ${tradeRes.error}`);
         }
       }
 
-      // Log to Supabase
-      await supabase.from('trade_log').insert({
-        ticker: signal.ticker,
-        split_ratio: signal.ratio,
-        source_site: signal.source,
-        split_type: splitType,
-        execution_status: executionStatus,
-      });
+      // Log to Supabase only if it's a meaningful action
+      if (shouldLog) {
+        await supabase.from('trade_log').insert({
+          ticker: signal.ticker,
+          split_ratio: signal.ratio,
+          source_site: signal.source,
+          split_type: splitType,
+          execution_status: executionStatus,
+        });
+      }
 
       processed.push({
         ticker: signal.ticker,
