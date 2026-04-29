@@ -453,9 +453,21 @@ export async function GET(request: Request) {
           executionStatus = `Executed - Buy ${tradeRes.qty} shares`;
           shouldLog = true;
         } else {
-          executionStatus = `Failed - ${tradeRes.error}`;
-          shouldLog = true;
-          console.error(`[Trade Failed] ${signal.ticker}: ${tradeRes.error}`);
+          // If it's a price issue, silently skip without logging
+          const isPriceIssue = tradeRes.error.includes('Failed to fetch quote') || 
+                               tradeRes.error.includes('Invalid ask price') ||
+                               tradeRes.error.includes('Calculated quantity is 0');
+          
+          if (isPriceIssue) {
+            executionStatus = 'Skipped - Out of Scope (No Quote/Invalid Price)';
+            shouldLog = false; // Do not log to DB
+            console.warn(`[Skip - Price Issue] ${signal.ticker}: ${tradeRes.error}`);
+          } else {
+            // High-priority issue (e.g. Insufficient funds, API key)
+            executionStatus = `Failed - ${tradeRes.error}`;
+            shouldLog = true;
+            console.error(`[Trade Failed] ${signal.ticker}: ${tradeRes.error}`);
+          }
         }
       }
 
