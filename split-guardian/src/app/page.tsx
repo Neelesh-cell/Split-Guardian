@@ -3,8 +3,12 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/utils/supabase';
 
+const formatCurrency = (value: number) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+
 export default function Dashboard() {
   const [account, setAccount] = useState<any>(null);
+  const [positions, setPositions] = useState<any[]>([]);
   const [trades, setTrades] = useState<any[]>([]);
   const [settings, setSettings] = useState<any>({ allow_reverse_splits: false, trade_size_dollars: 100, is_auto_buy_enabled: true });
   const [loading, setLoading] = useState(true);
@@ -15,11 +19,12 @@ export default function Dashboard() {
   const fetchDashboardData = async (manualSync = false) => {
     if (manualSync) setIsSyncing(true);
     try {
-      // Fetch Alpaca Account
+      // Fetch Alpaca Account + Positions
       const accRes = await fetch('/api/alpaca/account');
       if (accRes.ok) {
         const accData = await accRes.json();
         setAccount(accData);
+        setPositions(accData.positions || []);
       }
 
       // Fetch Trade Log
@@ -147,13 +152,18 @@ export default function Dashboard() {
     document.body.removeChild(link);
   };
 
+  // Derived metrics
+  const portfolioValue = account?.portfolioValue ?? 0;
+  const buyingPower = account?.buyingPower ?? 0;
+  const activeCapital = positions.reduce((sum: number, p: any) => sum + parseFloat(p.cost_basis || '0'), 0);
+
   if (loading) return <div className="min-h-screen bg-gray-950 text-white flex items-center justify-center">Loading Split-Guardian...</div>;
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 p-4 md:p-8 font-sans selection:bg-indigo-500/30">
       <div className="max-w-7xl mx-auto space-y-8">
         
-        {/* Header / P&L Top Bar */}
+        {/* Header */}
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 md:gap-0 bg-gray-900/50 backdrop-blur-md border border-gray-800 p-4 md:p-6 rounded-2xl shadow-2xl">
           <div>
             <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">
@@ -161,20 +171,89 @@ export default function Dashboard() {
             </h1>
             <p className="text-gray-400 text-sm mt-1">High-Precision Stock Split Automation</p>
           </div>
-          
-          <div className="flex w-full md:w-auto justify-between md:justify-end gap-4 md:gap-8 items-center">
-            <div className="flex flex-col items-start md:items-end">
-              <span className="text-xs md:text-sm text-gray-500 uppercase tracking-wider font-semibold">Net P/L</span>
-              <span className={`text-xl md:text-2xl font-bold ${account?.netPl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {account?.netPl >= 0 ? '+' : ''}${account?.netPl?.toFixed(2) || '0.00'}
-              </span>
-            </div>
-            <div className="flex flex-col items-end">
-              <span className="text-xs md:text-sm text-gray-500 uppercase tracking-wider font-semibold">Equity</span>
-              <span className="text-xl md:text-2xl font-bold text-white">${account?.equity?.toLocaleString(undefined, {minimumFractionDigits: 2}) || '0.00'}</span>
-            </div>
+          <div className="flex items-center gap-3">
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider ${account?.status === 'ACTIVE' ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-amber-500/10 border border-amber-500/20 text-amber-400'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${account?.status === 'ACTIVE' ? 'bg-emerald-400' : 'bg-amber-400'}`}></span>
+              {account?.status || 'Unknown'}
+            </span>
           </div>
         </header>
+
+        {/* ─── Top-Level Metrics Bar ─── */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6">
+          {/* Portfolio Value */}
+          <div className="relative overflow-hidden bg-slate-900/80 backdrop-blur-md border border-slate-700/50 p-5 md:p-6 rounded-2xl shadow-xl group hover:border-indigo-500/30 transition-colors duration-300">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-full -translate-y-8 translate-x-8"></div>
+            <p className="text-xs text-slate-400 uppercase tracking-widest font-semibold mb-2">Total Portfolio Value</p>
+            <p className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
+              {formatCurrency(portfolioValue)}
+            </p>
+          </div>
+
+          {/* Buying Power */}
+          <div className="relative overflow-hidden bg-slate-900/80 backdrop-blur-md border border-slate-700/50 p-5 md:p-6 rounded-2xl shadow-xl group hover:border-cyan-500/30 transition-colors duration-300">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-cyan-500/5 rounded-full -translate-y-8 translate-x-8"></div>
+            <p className="text-xs text-slate-400 uppercase tracking-widest font-semibold mb-2">Buying Power</p>
+            <p className="text-2xl md:text-3xl font-extrabold text-emerald-400 tracking-tight">
+              {formatCurrency(buyingPower)}
+            </p>
+          </div>
+
+          {/* Active Capital */}
+          <div className="relative overflow-hidden bg-slate-900/80 backdrop-blur-md border border-slate-700/50 p-5 md:p-6 rounded-2xl shadow-xl group hover:border-amber-500/30 transition-colors duration-300">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-full -translate-y-8 translate-x-8"></div>
+            <p className="text-xs text-slate-400 uppercase tracking-widest font-semibold mb-2">Active Capital</p>
+            <p className="text-2xl md:text-3xl font-extrabold text-amber-400 tracking-tight">
+              {formatCurrency(activeCapital)}
+            </p>
+            <p className="text-[11px] text-slate-500 mt-1">{positions.length} position{positions.length !== 1 ? 's' : ''} deployed</p>
+          </div>
+        </div>
+
+        {/* ─── Active Holdings Section ─── */}
+        <div className="bg-gray-900/50 backdrop-blur-md border border-gray-800 p-4 md:p-6 rounded-2xl shadow-xl overflow-hidden">
+          <div className="flex items-center gap-3 mb-5">
+            <h2 className="text-xl font-bold text-indigo-300">Current Holdings</h2>
+            {positions.length > 0 && (
+              <span className="text-xs font-bold text-slate-500 bg-slate-800 px-2.5 py-1 rounded-full">{positions.length}</span>
+            )}
+          </div>
+
+          {positions.length === 0 ? (
+            <p className="text-sm text-slate-500 italic py-6 text-center">No active holdings. Waiting for next split signal.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="text-gray-500 uppercase tracking-wider border-b border-gray-800">
+                    <th className="pb-3 px-4 font-semibold">Ticker</th>
+                    <th className="pb-3 px-4 font-semibold text-right">Shares</th>
+                    <th className="pb-3 px-4 font-semibold text-right">Cost Basis</th>
+                    <th className="pb-3 px-4 font-semibold text-right">Market Value</th>
+                    <th className="pb-3 px-4 font-semibold text-right">P/L %</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-800/50">
+                  {positions.map((p: any) => {
+                    const plPercent = parseFloat(p.unrealized_plpc || '0') * 100;
+                    const isPositive = plPercent >= 0;
+                    return (
+                      <tr key={p.asset_id} className="hover:bg-gray-800/20 transition-colors">
+                        <td className="py-3 px-4 font-bold text-white">{p.symbol}</td>
+                        <td className="py-3 px-4 text-right text-slate-300">{parseFloat(p.qty)}</td>
+                        <td className="py-3 px-4 text-right text-slate-300">{formatCurrency(parseFloat(p.cost_basis))}</td>
+                        <td className="py-3 px-4 text-right text-slate-300">{formatCurrency(parseFloat(p.market_value))}</td>
+                        <td className={`py-3 px-4 text-right font-semibold ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {isPositive ? '+' : ''}{plPercent.toFixed(2)}%
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           

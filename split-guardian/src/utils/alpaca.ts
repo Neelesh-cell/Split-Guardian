@@ -19,6 +19,22 @@ export async function getAlpacaAccount() {
   return res.json();
 }
 
+export async function getAlpacaPositions() {
+  const res = await fetch(`${ALPACA_BASE_URL}/v2/positions`, {
+    headers: {
+      'APCA-API-KEY-ID': ALPACA_API_KEY,
+      'APCA-API-SECRET-KEY': ALPACA_API_SECRET,
+      'Accept': 'application/json'
+    },
+    cache: 'no-store'
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to fetch Alpaca positions: ${await res.text()}`);
+  }
+  return res.json();
+}
+
 export async function getAsset(ticker: string) {
   const res = await fetch(`${ALPACA_BASE_URL}/v2/assets/${ticker}`, {
     headers: {
