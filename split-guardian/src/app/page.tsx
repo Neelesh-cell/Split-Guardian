@@ -122,6 +122,18 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
     fetchDashboardData();
     const interval = setInterval(() => fetchDashboardData(), 15000);
 
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const strikeTicker = params.get('strike');
+      if (strikeTicker) {
+        setMsTicker(strikeTicker.toUpperCase());
+        setMsAction('Buy');
+        setMsTradeBy('quantity');
+        setMsValue('1');
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    }
+
     const channel = supabase.channel('public:trade_log')
       .on(
         'postgres_changes',
@@ -477,13 +489,22 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
                   <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Live</span>
                 </div>
               </div>
-              <button 
-                onClick={downloadCSV}
-                className="flex items-center gap-2 text-sm bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded-lg transition-colors border border-gray-700"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                <span className="hidden sm:inline">Download CSV</span>
-              </button>
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={downloadCSV}
+                  className="flex items-center gap-2 text-sm bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded-lg transition-colors border border-gray-700"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                  <span className="hidden sm:inline">Download CSV</span>
+                </button>
+                <Link 
+                  href="/logs"
+                  className="flex items-center gap-2 text-sm bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 px-3 py-1.5 rounded-lg transition-colors border border-indigo-500/20"
+                >
+                  <span className="hidden sm:inline font-semibold">View All</span>
+                  <svg className="w-4 h-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+                </Link>
+              </div>
             </div>
             
             <div className="overflow-x-auto flex-1">
