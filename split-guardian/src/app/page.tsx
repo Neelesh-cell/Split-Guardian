@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { supabase } from '@/utils/supabase';
 
 const formatCurrency = (value: number) =>
@@ -417,6 +418,16 @@ export default function Dashboard() {
           </div>
 
         </div>
+
+        {/* Footer */}
+        <footer className="mt-12 pt-8 border-t border-gray-800 text-center text-sm text-gray-500 pb-8 flex flex-col md:flex-row justify-center items-center gap-4">
+          <p>© {new Date().getFullYear()} Split-Guardian. All rights reserved.</p>
+          <div className="flex items-center gap-4">
+            <Link href="/privacy" className="hover:text-indigo-400 transition-colors">Privacy Policy</Link>
+            <span>|</span>
+            <Link href="/terms" className="hover:text-rose-400 transition-colors">Terms of Use</Link>
+          </div>
+        </footer>
       </div>
     </div>
   );
