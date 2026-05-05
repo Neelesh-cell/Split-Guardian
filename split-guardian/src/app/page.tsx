@@ -78,7 +78,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
   const [account, setAccount] = useState<any>(null);
   const [positions, setPositions] = useState<any[]>([]);
   const [trades, setTrades] = useState<any[]>([]);
-  const [settings, setSettings] = useState<any>({ allow_reverse_splits: false, trade_size_dollars: 100, is_auto_buy_enabled: true });
+  const [settings, setSettings] = useState<any>({ allow_reverse_splits: false, trade_size_dollars: 1, is_auto_buy_enabled: true, position_type: 'quantity' });
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
@@ -366,8 +366,19 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
                     <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${settings.allow_reverse_splits ? 'translate-x-6' : 'translate-x-0'}`} />
                   </button>
                 </div>
+                <div className="flex justify-between items-center">
+                  <label className="text-gray-300 font-medium">Position Type</label>
+                  <select 
+                    value={settings.position_type || 'quantity'}
+                    onChange={(e) => updateSettings('position_type', e.target.value)}
+                    className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white font-medium focus:outline-none focus:border-indigo-500 transition-colors appearance-none"
+                  >
+                    <option value="quantity">Shares</option>
+                    <option value="amount">Dollars</option>
+                  </select>
+                </div>
                 <div>
-                  <label className="block text-gray-300 font-medium mb-2">Trade Size ($ per buy)</label>
+                  <label className="block text-gray-300 font-medium mb-2">Trade Size ({settings.position_type === 'amount' ? '$ per buy' : 'Shares per buy'})</label>
                   <input 
                     type="text" 
                     inputMode="numeric"

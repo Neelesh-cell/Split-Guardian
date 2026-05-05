@@ -366,7 +366,10 @@ export async function GET(request: Request) {
 
     // 1. Fetch Global Settings
     const { data: settingsData } = await supabase.from('settings').select('*').eq('id', 1).single();
-    const settings = settingsData || { allow_reverse_splits: false, trade_size_dollars: 100, is_auto_buy_enabled: true };
+    const settings = settingsData || { allow_reverse_splits: false, trade_size_dollars: 1, position_type: 'quantity', is_auto_buy_enabled: true };
+
+    const orderType = settings.position_type === 'amount' ? 'amount' : 'quantity';
+    const tradeSize = Number(settings.trade_size_dollars);
 
     // 1.5. THE HUNTER: Auto-Retry Engine
     console.log('--- Checking for Pending Retries ---');
@@ -380,7 +383,7 @@ export async function GET(request: Request) {
       console.log(`Found ${pendingRetries.length} pending trades ready for retry.`);
       for (const retry of pendingRetries) {
         console.log(`[Retry] Attempting ${retry.ticker}...`);
-        const tradeRes = await executeMarketBuy(retry.ticker, 'quantity', 1);
+        const tradeRes = await executeMarketBuy(retry.ticker, orderType, tradeSize);
         
         let newStatus = '';
         if (tradeRes.success) {
@@ -481,7 +484,7 @@ export async function GET(request: Request) {
         shouldLog = true; // Log once for manual review
       } else {
         // Forward Split or (Reverse Split + Allowed) → Execute via Alpaca
-        const tradeRes = await executeMarketBuy(signal.ticker, 'quantity', 1);
+        const tradeRes = await executeMarketBuy(signal.ticker, orderType, tradeSize);
 
         if (tradeRes.success) {
           executionStatus = `Executed - Buy ${tradeRes.qty} shares`;
