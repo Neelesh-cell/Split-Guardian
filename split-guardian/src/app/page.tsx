@@ -15,6 +15,7 @@ export default function Dashboard() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [localTradeSize, setLocalTradeSize] = useState<string>('100');
+  const [linkEmail, setLinkEmail] = useState('');
 
   const fetchDashboardData = async (manualSync = false) => {
     if (manualSync) setIsSyncing(true);
@@ -312,6 +313,33 @@ export default function Dashboard() {
               >
                 {isSyncing ? 'Syncing...' : 'Force Refresh Sync'}
               </button>
+            </div>
+
+            {/* Link Alpaca Account */}
+            <div className="mt-8 pt-6 border-t border-gray-800 space-y-4">
+              <h3 className="text-lg font-bold text-indigo-300">Link Sub-Account</h3>
+              <p className="text-sm text-gray-400">Authorize Alpaca to enable multi-account manual execution.</p>
+              <div>
+                <input 
+                  type="email" 
+                  placeholder="User Email Address"
+                  value={linkEmail}
+                  onChange={(e) => setLinkEmail(e.target.value)}
+                  className="w-full bg-gray-950 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-indigo-500 transition-colors mb-3"
+                />
+                <button 
+                  onClick={() => {
+                    if (!linkEmail) return alert('Please enter an email address first.');
+                    const clientId = process.env.NEXT_PUBLIC_ALPACA_CLIENT_ID;
+                    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/alpaca/callback`;
+                    const authUrl = `https://app.alpaca.markets/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}&scope=account:write%20trading&state=${encodeURIComponent(linkEmail)}`;
+                    window.location.href = authUrl;
+                  }}
+                  className="w-full font-medium py-2 rounded-lg transition-colors border border-indigo-600 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300"
+                >
+                  Link Account via Alpaca
+                </button>
+              </div>
             </div>
           </div>
 
