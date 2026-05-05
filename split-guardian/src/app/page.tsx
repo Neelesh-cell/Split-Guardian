@@ -38,6 +38,7 @@ function LandingPage({ onConnect }: { onConnect: (email: string) => void }) {
           />
 
           <div className="bg-gray-800/30 border border-gray-700/50 p-4 rounded-xl text-left space-y-2">
+            <p className="text-[11px] text-gray-400 font-semibold mb-1">By connecting to Alpaca, you acknowledge:</p>
             <p className="text-[11px] text-gray-400 leading-relaxed">
               <strong>Access:</strong> Split-Guardian will have access to your account info and authorization to place trades at your direction.
             </p>
