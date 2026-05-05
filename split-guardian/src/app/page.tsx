@@ -37,9 +37,15 @@ function LandingPage({ onConnect }: { onConnect: (email: string) => void }) {
             className="w-full bg-gray-950 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition-colors shadow-inner"
           />
 
-          <div className="bg-gray-800/30 border border-gray-700/50 p-4 rounded-xl text-left">
+          <div className="bg-gray-800/30 border border-gray-700/50 p-4 rounded-xl text-left space-y-2">
             <p className="text-[11px] text-gray-400 leading-relaxed">
-              By allowing Split-Guardian to access your Alpaca account, you are granting Split-Guardian access to your account information and authorization to place transactions in your account at your direction. Alpaca does not warrant or guarantee that Split-Guardian will work as advertised or expected. Before authorizing, learn more about Split-Guardian.
+              <strong>Access:</strong> Split-Guardian will have access to your account info and authorization to place trades at your direction.
+            </p>
+            <p className="text-[11px] text-gray-400 leading-relaxed">
+              <strong>No Guarantee:</strong> Alpaca does not warrant or guarantee that Split-Guardian will perform as advertised or expected.
+            </p>
+            <p className="text-[11px] text-gray-400 leading-relaxed">
+              <strong>Due Diligence:</strong> Please ensure you learn more about Split-Guardian before authorizing.
             </p>
           </div>
 
