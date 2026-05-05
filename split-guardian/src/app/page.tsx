@@ -7,7 +7,67 @@ import { supabase } from '@/utils/supabase';
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
 
-export default function Dashboard() {
+function LandingPage({ onConnect }: { onConnect: (email: string) => void }) {
+  const [email, setEmail] = useState('');
+
+  return (
+    <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col items-center justify-center p-6 selection:bg-indigo-500/30">
+      <div className="max-w-md w-full bg-gray-900/50 backdrop-blur-md border border-gray-800 p-8 rounded-3xl shadow-2xl text-center">
+        
+        <div className="flex justify-center mb-6">
+          <div className="p-4 bg-indigo-500/10 rounded-full border border-indigo-500/20 shadow-inner">
+            <svg className="w-12 h-12 text-indigo-400" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>
+              <path d="m9 12 2 2 4-4"/>
+            </svg>
+          </div>
+        </div>
+
+        <h1 className="text-3xl font-extrabold tracking-tight text-white mb-2">
+          Split-<span className="bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">Guardian</span>
+        </h1>
+        <p className="text-gray-400 mb-8 font-medium">Professional Execution Dashboard</p>
+
+        <div className="space-y-5">
+          <input 
+            type="email" 
+            placeholder="Enter your email address"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full bg-gray-950 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition-colors shadow-inner"
+          />
+
+          <div className="bg-gray-800/30 border border-gray-700/50 p-4 rounded-xl text-left">
+            <p className="text-[11px] text-gray-400 leading-relaxed">
+              By allowing Split-Guardian to access your Alpaca account, you are granting Split-Guardian access to your account information and authorization to place transactions in your account at your direction. Alpaca does not warrant or guarantee that Split-Guardian will work as advertised or expected. Before authorizing, learn more about Split-Guardian.
+            </p>
+          </div>
+
+          <button 
+            onClick={() => {
+              if (!email) return alert('Please enter an email address.');
+              onConnect(email);
+            }}
+            className="w-full font-bold py-3.5 rounded-xl transition-all border border-indigo-500 bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20"
+          >
+            Connect to Alpaca
+          </button>
+        </div>
+      </div>
+
+      <footer className="mt-12 text-center text-sm text-gray-500 flex flex-col md:flex-row justify-center items-center gap-4">
+        <p>© {new Date().getFullYear()} Split-Guardian.</p>
+        <div className="flex items-center gap-4">
+          <Link href="/privacy" className="hover:text-indigo-400 transition-colors">Privacy Policy</Link>
+          <span>|</span>
+          <Link href="/terms" className="hover:text-indigo-400 transition-colors">Terms of Use</Link>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+function Dashboard({ onLogout }: { onLogout: () => void }) {
   const [account, setAccount] = useState<any>(null);
   const [positions, setPositions] = useState<any[]>([]);
   const [trades, setTrades] = useState<any[]>([]);
@@ -16,12 +76,10 @@ export default function Dashboard() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [localTradeSize, setLocalTradeSize] = useState<string>('100');
-  const [linkEmail, setLinkEmail] = useState('');
 
   const fetchDashboardData = async (manualSync = false) => {
     if (manualSync) setIsSyncing(true);
     try {
-      // Fetch Alpaca Account + Positions
       const accRes = await fetch('/api/alpaca/account');
       if (accRes.ok) {
         const accData = await accRes.json();
@@ -29,11 +87,9 @@ export default function Dashboard() {
         setPositions(accData.positions || []);
       }
 
-      // Fetch Trade Log
       const { data: tradeData } = await supabase.from('trade_log').select('*').order('created_at', { ascending: false }).limit(20);
       if (tradeData) setTrades(tradeData);
 
-      // Fetch Settings
       const { data: setData } = await supabase.from('settings').select('*').eq('id', 1).single();
       if (setData) {
         setSettings(setData);
@@ -50,21 +106,16 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchDashboardData();
-    const interval = setInterval(() => fetchDashboardData(), 15000); // Refresh every 15s
+    const interval = setInterval(() => fetchDashboardData(), 15000);
 
-    // Set up Realtime Subscription
     const channel = supabase.channel('public:trade_log')
       .on(
         'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'trade_log',
-        },
+        { event: 'INSERT', schema: 'public', table: 'trade_log' },
         (payload) => {
           setTrades((currentTrades) => {
             const newTrades = [payload.new, ...currentTrades];
-            return newTrades.slice(0, 20); // Keep only the latest 20
+            return newTrades.slice(0, 20);
           });
         }
       )
@@ -100,8 +151,6 @@ export default function Dashboard() {
   const updateSettings = async (key: string, value: any) => {
     const oldSettings = { ...settings };
     const newSettings = { ...settings, [key]: value };
-    
-    // Optimistic update
     setSettings(newSettings);
     setSavingSettings(true);
     
@@ -110,7 +159,6 @@ export default function Dashboard() {
       if (error) throw error;
     } catch (err) {
       console.error('Failed to update settings:', err);
-      // Revert on failure
       setSettings(oldSettings);
       alert('Failed to save settings. Check your database permissions.');
     } finally {
@@ -120,7 +168,6 @@ export default function Dashboard() {
 
   const downloadCSV = () => {
     if (trades.length === 0) return;
-    
     const headers = ['Date', 'Time (Local)', 'Ticker', 'Type', 'Ratio', 'Trade Size', 'Status'];
     const csvRows = [headers.join(',')];
     
@@ -128,44 +175,31 @@ export default function Dashboard() {
       const d = new Date(t.created_at);
       const time = new Intl.DateTimeFormat('default', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(d);
       const date = new Intl.DateTimeFormat('default', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
-      
-      const row = [
-        date,
-        time,
-        t.ticker,
-        t.split_type,
-        `"${t.split_ratio}"`,
-        settings.trade_size_dollars,
-        `"${t.execution_status}"`
-      ];
+      const row = [date, time, t.ticker, t.split_type, `"${t.split_ratio}"`, settings.trade_size_dollars, `"${t.execution_status}"`];
       csvRows.push(row.join(','));
     });
     
     const csvContent = csvRows.join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    
     const link = document.createElement('a');
-    const todayStr = new Date().toISOString().split('T')[0];
     link.setAttribute('href', url);
-    link.setAttribute('download', `Split-Guardian-Logs-${todayStr}.csv`);
+    link.setAttribute('download', `Split-Guardian-Logs-${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  // Derived metrics
   const portfolioValue = account?.portfolioValue ?? 0;
   const buyingPower = account?.buyingPower ?? 0;
   const activeCapital = positions.reduce((sum: number, p: any) => sum + parseFloat(p.cost_basis || '0'), 0);
 
-  if (loading) return <div className="min-h-screen bg-gray-950 text-white flex items-center justify-center">Loading Split-Guardian...</div>;
+  if (loading) return <div className="min-h-screen bg-gray-950 text-white flex items-center justify-center">Loading Dashboard...</div>;
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 p-4 md:p-8 font-sans selection:bg-indigo-500/30">
       <div className="max-w-7xl mx-auto space-y-8">
         
-        {/* Header */}
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 md:gap-0 bg-gray-900/50 backdrop-blur-md border border-gray-800 p-4 md:p-6 rounded-2xl shadow-2xl">
           <div>
             <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">
@@ -173,54 +207,41 @@ export default function Dashboard() {
             </h1>
             <p className="text-gray-400 text-sm mt-1">High-Precision Stock Split Automation</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider ${account?.status === 'ACTIVE' ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-amber-500/10 border border-amber-500/20 text-amber-400'}`}>
               <span className={`w-1.5 h-1.5 rounded-full ${account?.status === 'ACTIVE' ? 'bg-emerald-400' : 'bg-amber-400'}`}></span>
               {account?.status || 'Unknown'}
             </span>
+            <button onClick={onLogout} className="text-sm font-medium text-gray-500 hover:text-rose-400 transition-colors">
+              Log out
+            </button>
           </div>
         </header>
 
-        {/* ─── Top-Level Metrics Bar ─── */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6">
-          {/* Portfolio Value */}
           <div className="relative overflow-hidden bg-slate-900/80 backdrop-blur-md border border-slate-700/50 p-5 md:p-6 rounded-2xl shadow-xl group hover:border-indigo-500/30 transition-colors duration-300">
             <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-full -translate-y-8 translate-x-8"></div>
             <p className="text-xs text-slate-400 uppercase tracking-widest font-semibold mb-2">Total Portfolio Value</p>
-            <p className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
-              {formatCurrency(portfolioValue)}
-            </p>
+            <p className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">{formatCurrency(portfolioValue)}</p>
           </div>
-
-          {/* Buying Power */}
           <div className="relative overflow-hidden bg-slate-900/80 backdrop-blur-md border border-slate-700/50 p-5 md:p-6 rounded-2xl shadow-xl group hover:border-cyan-500/30 transition-colors duration-300">
             <div className="absolute top-0 right-0 w-24 h-24 bg-cyan-500/5 rounded-full -translate-y-8 translate-x-8"></div>
             <p className="text-xs text-slate-400 uppercase tracking-widest font-semibold mb-2">Buying Power</p>
-            <p className="text-2xl md:text-3xl font-extrabold text-emerald-400 tracking-tight">
-              {formatCurrency(buyingPower)}
-            </p>
+            <p className="text-2xl md:text-3xl font-extrabold text-emerald-400 tracking-tight">{formatCurrency(buyingPower)}</p>
           </div>
-
-          {/* Active Capital */}
           <div className="relative overflow-hidden bg-slate-900/80 backdrop-blur-md border border-slate-700/50 p-5 md:p-6 rounded-2xl shadow-xl group hover:border-amber-500/30 transition-colors duration-300">
             <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-full -translate-y-8 translate-x-8"></div>
             <p className="text-xs text-slate-400 uppercase tracking-widest font-semibold mb-2">Active Capital</p>
-            <p className="text-2xl md:text-3xl font-extrabold text-amber-400 tracking-tight">
-              {formatCurrency(activeCapital)}
-            </p>
+            <p className="text-2xl md:text-3xl font-extrabold text-amber-400 tracking-tight">{formatCurrency(activeCapital)}</p>
             <p className="text-[11px] text-slate-500 mt-1">{positions.length} position{positions.length !== 1 ? 's' : ''} deployed</p>
           </div>
         </div>
 
-        {/* ─── Active Holdings Section ─── */}
         <div className="bg-gray-900/50 backdrop-blur-md border border-gray-800 p-4 md:p-6 rounded-2xl shadow-xl overflow-hidden">
           <div className="flex items-center gap-3 mb-5">
             <h2 className="text-xl font-bold text-indigo-300">Current Holdings</h2>
-            {positions.length > 0 && (
-              <span className="text-xs font-bold text-slate-500 bg-slate-800 px-2.5 py-1 rounded-full">{positions.length}</span>
-            )}
+            {positions.length > 0 && <span className="text-xs font-bold text-slate-500 bg-slate-800 px-2.5 py-1 rounded-full">{positions.length}</span>}
           </div>
-
           {positions.length === 0 ? (
             <p className="text-sm text-slate-500 italic py-6 text-center">No active holdings. Waiting for next split signal.</p>
           ) : (
@@ -259,7 +280,6 @@ export default function Dashboard() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
-          {/* Settings Panel */}
           <div className="bg-gray-900/50 backdrop-blur-md border border-gray-800 p-4 md:p-6 rounded-2xl shadow-xl lg:col-span-1">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-bold text-indigo-300">Execution Settings</h2>
@@ -273,7 +293,6 @@ export default function Dashboard() {
                 </span>
               )}
             </div>
-            
             <div className="space-y-6">
               <div className="flex justify-between items-center">
                 <label className="text-gray-300 font-medium">Auto-Buy Enabled</label>
@@ -284,7 +303,6 @@ export default function Dashboard() {
                   <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${settings.is_auto_buy_enabled ? 'translate-x-6' : 'translate-x-0'}`} />
                 </button>
               </div>
-
               <div className="flex justify-between items-center">
                 <label className="text-gray-300 font-medium">Allow Reverse Splits</label>
                 <button 
@@ -294,7 +312,6 @@ export default function Dashboard() {
                   <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${settings.allow_reverse_splits ? 'translate-x-6' : 'translate-x-0'}`} />
                 </button>
               </div>
-
               <div>
                 <label className="block text-gray-300 font-medium mb-2">Trade Size ($ per buy)</label>
                 <input 
@@ -306,7 +323,6 @@ export default function Dashboard() {
                   className="w-full bg-gray-950 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-indigo-500 transition-colors"
                 />
               </div>
-
               <button 
                 onClick={() => fetchDashboardData(true)}
                 disabled={isSyncing}
@@ -315,36 +331,8 @@ export default function Dashboard() {
                 {isSyncing ? 'Syncing...' : 'Force Refresh Sync'}
               </button>
             </div>
-
-            {/* Link Alpaca Account */}
-            <div className="mt-8 pt-6 border-t border-gray-800 space-y-4">
-              <h3 className="text-lg font-bold text-indigo-300">Link Sub-Account</h3>
-              <p className="text-sm text-gray-400">Authorize Alpaca to enable multi-account manual execution.</p>
-              <div>
-                <input 
-                  type="email" 
-                  placeholder="User Email Address"
-                  value={linkEmail}
-                  onChange={(e) => setLinkEmail(e.target.value)}
-                  className="w-full bg-gray-950 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-indigo-500 transition-colors mb-3"
-                />
-                <button 
-                  onClick={() => {
-                    if (!linkEmail) return alert('Please enter an email address first.');
-                    const clientId = process.env.NEXT_PUBLIC_ALPACA_CLIENT_ID;
-                    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/alpaca/callback`;
-                    const authUrl = `https://app.alpaca.markets/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}&scope=account:write%20trading&state=${encodeURIComponent(linkEmail)}`;
-                    window.location.href = authUrl;
-                  }}
-                  className="w-full font-medium py-2 rounded-lg transition-colors border border-indigo-600 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300"
-                >
-                  Link Account via Alpaca
-                </button>
-              </div>
-            </div>
           </div>
 
-          {/* Signal Feed */}
           <div className="bg-gray-900/50 backdrop-blur-md border border-gray-800 p-4 md:p-6 rounded-2xl shadow-xl lg:col-span-2 overflow-hidden flex flex-col">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
@@ -389,9 +377,7 @@ export default function Dashboard() {
 
                     return (
                       <tr key={t.id} className="hover:bg-gray-800/20 transition-colors">
-                        <td className="py-3 px-4 text-slate-400 hidden md:table-cell whitespace-nowrap">
-                          {date}
-                        </td>
+                        <td className="py-3 px-4 text-slate-400 hidden md:table-cell whitespace-nowrap">{date}</td>
                         <td className="py-3 px-4 text-slate-400 whitespace-nowrap">
                           <span className="md:hidden text-xs mr-2">{date} |</span>
                           <span>{time}</span>
@@ -416,10 +402,8 @@ export default function Dashboard() {
               </table>
             </div>
           </div>
-
         </div>
 
-        {/* Footer */}
         <footer className="mt-12 pt-8 border-t border-gray-800 text-center text-sm text-gray-500 pb-8 flex flex-col md:flex-row justify-center items-center gap-4">
           <p>© {new Date().getFullYear()} Split-Guardian. All rights reserved.</p>
           <div className="flex items-center gap-4">
@@ -431,4 +415,63 @@ export default function Dashboard() {
       </div>
     </div>
   );
+}
+
+export default function Main() {
+  const [sessionEmail, setSessionEmail] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    // Client-side hydration check
+    setMounted(true);
+    
+    // Check local storage for existing session
+    const stored = localStorage.getItem('split_guardian_session');
+    
+    // Check URL params for OAuth callback
+    const searchParams = new URLSearchParams(window.location.search);
+    const success = searchParams.get('success');
+    const paramEmail = searchParams.get('session_email');
+
+    if (success === 'alpaca_linked' && paramEmail) {
+      localStorage.setItem('split_guardian_session', paramEmail);
+      setSessionEmail(paramEmail);
+      // Clean up the URL
+      window.history.replaceState({}, document.title, '/');
+    } else if (stored) {
+      setSessionEmail(stored);
+    }
+  }, []);
+
+  const handleConnect = (email: string) => {
+    const devEmail = process.env.NEXT_PUBLIC_DEV_EMAIL;
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    
+    // Developer Backdoor
+    if (isLocalhost || (devEmail && email === devEmail)) {
+      localStorage.setItem('split_guardian_session', email);
+      setSessionEmail(email);
+      return;
+    }
+
+    // Standard OAuth Flow
+    const clientId = process.env.NEXT_PUBLIC_ALPACA_CLIENT_ID;
+    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/alpaca/callback`;
+    const authUrl = `https://app.alpaca.markets/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}&scope=account:write%20trading&state=${encodeURIComponent(email)}`;
+    window.location.href = authUrl;
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('split_guardian_session');
+    setSessionEmail(null);
+  };
+
+  // Prevent hydration mismatch by not rendering anything until client mounts
+  if (!mounted) return null;
+
+  if (!sessionEmail) {
+    return <LandingPage onConnect={handleConnect} />;
+  }
+
+  return <Dashboard onLogout={handleLogout} />;
 }

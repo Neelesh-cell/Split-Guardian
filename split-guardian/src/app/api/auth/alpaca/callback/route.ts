@@ -56,8 +56,6 @@ export async function GET(request: Request) {
     const accessToken = tokenData.access_token;
 
     // 2. Fetch the user's Alpaca account ID using the new token
-    // Note: We use the live API URL here because OAuth tokens generally resolve to the correct environment
-    // depending on the user's account type, but /v2/account always works with the Bearer token.
     const accountRes = await fetch('https://api.alpaca.markets/v2/account', {
       headers: {
         'Authorization': `Bearer ${accessToken}`,
@@ -88,8 +86,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: false, error: 'Failed to save user data' }, { status: 500 });
     }
 
-    // 4. Redirect the user back to the main dashboard
-    return NextResponse.redirect(new URL('/?success=alpaca_linked', request.url));
+    // 4. Redirect the user back to the main dashboard with the session email
+    const redirectUrl = new URL(`/?success=alpaca_linked&session_email=${encodeURIComponent(email)}`, request.url);
+    return NextResponse.redirect(redirectUrl);
 
   } catch (error: any) {
     console.error('Alpaca OAuth Callback Error:', error);
