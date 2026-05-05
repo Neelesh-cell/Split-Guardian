@@ -84,6 +84,13 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
   const [savingSettings, setSavingSettings] = useState(false);
   const [localTradeSize, setLocalTradeSize] = useState<string>('100');
 
+  // Manual Strike State
+  const [msTicker, setMsTicker] = useState('');
+  const [msAction, setMsAction] = useState('Buy');
+  const [msTradeBy, setMsTradeBy] = useState('quantity');
+  const [msValue, setMsValue] = useState('1');
+  const [isStriking, setIsStriking] = useState(false);
+
   const fetchDashboardData = async (manualSync = false) => {
     if (manualSync) setIsSyncing(true);
     try {
@@ -170,6 +177,45 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
       alert('Failed to save settings. Check your database permissions.');
     } finally {
       setSavingSettings(false);
+    }
+  };
+
+  const handleStrikePreFill = (ticker: string) => {
+    setMsTicker(ticker);
+    setMsAction('Buy');
+    setMsTradeBy('quantity');
+    setMsValue('1');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const executeManualStrike = async () => {
+    if (!msTicker || !msValue) return alert('Please enter a Ticker and Value.');
+    const confirm = window.confirm(`WARNING: You are about to execute a ${msAction.toUpperCase()} order for ${msValue} ${msTradeBy === 'quantity' ? 'shares' : 'dollars'} of ${msTicker} across ALL linked accounts.\n\nProceed with Manual Strike?`);
+    if (!confirm) return;
+
+    setIsStriking(true);
+    try {
+      const res = await fetch('/api/manual-strike', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ticker: msTicker,
+          action: msAction,
+          tradeBy: msTradeBy,
+          value: msValue
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert(`Success!\n\n${data.summary}`);
+        fetchDashboardData(true); // refresh positions and feed
+      } else {
+        alert(`Error: ${data.error}`);
+      }
+    } catch (e: any) {
+      alert(`Execution failed: ${e.message}`);
+    } finally {
+      setIsStriking(false);
     }
   };
 
@@ -287,56 +333,124 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
-          <div className="bg-gray-900/50 backdrop-blur-md border border-gray-800 p-4 md:p-6 rounded-2xl shadow-xl lg:col-span-1">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-indigo-300">Execution Settings</h2>
-              {savingSettings && (
-                <span className="flex items-center gap-2 text-xs font-medium text-indigo-400">
-                  <svg className="animate-spin h-3 w-3 text-indigo-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Saving...
-                </span>
-              )}
+          <div className="space-y-8 lg:col-span-1">
+            <div className="bg-gray-900/50 backdrop-blur-md border border-gray-800 p-4 md:p-6 rounded-2xl shadow-xl">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold text-indigo-300">Execution Settings</h2>
+                {savingSettings && (
+                  <span className="flex items-center gap-2 text-xs font-medium text-indigo-400">
+                    <svg className="animate-spin h-3 w-3 text-indigo-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Saving...
+                  </span>
+                )}
+              </div>
+              <div className="space-y-6">
+                <div className="flex justify-between items-center">
+                  <label className="text-gray-300 font-medium">Auto-Buy Enabled</label>
+                  <button 
+                    onClick={() => updateSettings('is_auto_buy_enabled', !settings.is_auto_buy_enabled)}
+                    className={`w-12 h-6 rounded-full transition-colors relative ${settings.is_auto_buy_enabled ? 'bg-indigo-500' : 'bg-gray-700'}`}
+                  >
+                    <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${settings.is_auto_buy_enabled ? 'translate-x-6' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+                <div className="flex justify-between items-center">
+                  <label className="text-gray-300 font-medium">Allow Reverse Splits</label>
+                  <button 
+                    onClick={() => updateSettings('allow_reverse_splits', !settings.allow_reverse_splits)}
+                    className={`w-12 h-6 rounded-full transition-colors relative ${settings.allow_reverse_splits ? 'bg-rose-500' : 'bg-gray-700'}`}
+                  >
+                    <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${settings.allow_reverse_splits ? 'translate-x-6' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+                <div>
+                  <label className="block text-gray-300 font-medium mb-2">Trade Size ($ per buy)</label>
+                  <input 
+                    type="text" 
+                    inputMode="numeric"
+                    value={localTradeSize}
+                    onChange={handleTradeSizeChange}
+                    onBlur={handleTradeSizeBlur}
+                    className="w-full bg-gray-950 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                  />
+                </div>
+                <button 
+                  onClick={() => fetchDashboardData(true)}
+                  disabled={isSyncing}
+                  className={`w-full font-medium py-2 rounded-lg transition-colors border ${isSyncing ? 'bg-gray-700 text-gray-400 border-gray-600 cursor-not-allowed' : 'bg-gray-800 hover:bg-gray-700 text-white border-gray-700'}`}
+                >
+                  {isSyncing ? 'Syncing...' : 'Force Refresh Sync'}
+                </button>
+              </div>
             </div>
-            <div className="space-y-6">
-              <div className="flex justify-between items-center">
-                <label className="text-gray-300 font-medium">Auto-Buy Enabled</label>
+
+            <div className="bg-gray-900/50 backdrop-blur-md border border-rose-900/50 p-4 md:p-6 rounded-2xl shadow-xl">
+              <div className="flex items-center gap-3 mb-6">
+                <h2 className="text-xl font-bold text-rose-400">Manual Strike</h2>
+                <div className="px-2 py-0.5 rounded bg-rose-500/10 border border-rose-500/20 text-[10px] font-bold text-rose-400 uppercase tracking-widest">
+                  Multi-Account
+                </div>
+              </div>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Ticker</label>
+                  <input 
+                    type="text" 
+                    value={msTicker}
+                    onChange={e => setMsTicker(e.target.value.toUpperCase())}
+                    placeholder="e.g. AAPL"
+                    className="w-full bg-gray-950 border border-gray-700 rounded-lg px-4 py-2.5 text-white font-bold focus:outline-none focus:border-rose-500 transition-colors uppercase placeholder:normal-case placeholder:font-normal"
+                  />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Action</label>
+                    <select 
+                      value={msAction}
+                      onChange={e => setMsAction(e.target.value)}
+                      className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2.5 text-white font-medium focus:outline-none focus:border-rose-500 transition-colors appearance-none"
+                    >
+                      <option value="Buy">Buy</option>
+                      <option value="Sell">Sell</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Trade By</label>
+                    <select 
+                      value={msTradeBy}
+                      onChange={e => setMsTradeBy(e.target.value)}
+                      className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2.5 text-white font-medium focus:outline-none focus:border-rose-500 transition-colors appearance-none"
+                    >
+                      <option value="quantity">Shares</option>
+                      <option value="amount">Dollars</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Value ({msTradeBy === 'quantity' ? 'Shares' : '$'})</label>
+                  <input 
+                    type="text" 
+                    inputMode="numeric"
+                    value={msValue}
+                    onChange={e => setMsValue(e.target.value)}
+                    className="w-full bg-gray-950 border border-gray-700 rounded-lg px-4 py-2.5 text-white font-medium focus:outline-none focus:border-rose-500 transition-colors"
+                  />
+                </div>
+
                 <button 
-                  onClick={() => updateSettings('is_auto_buy_enabled', !settings.is_auto_buy_enabled)}
-                  className={`w-12 h-6 rounded-full transition-colors relative ${settings.is_auto_buy_enabled ? 'bg-indigo-500' : 'bg-gray-700'}`}
+                  onClick={executeManualStrike}
+                  disabled={isStriking || !msTicker || !msValue}
+                  className={`w-full font-bold py-3 mt-2 rounded-xl transition-all border ${isStriking || !msTicker || !msValue ? 'bg-gray-800 text-gray-500 border-gray-700 cursor-not-allowed' : 'bg-rose-600 hover:bg-rose-500 text-white border-rose-500 shadow-lg shadow-rose-500/20'}`}
                 >
-                  <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${settings.is_auto_buy_enabled ? 'translate-x-6' : 'translate-x-0'}`} />
+                  {isStriking ? 'Executing...' : 'Review & Execute'}
                 </button>
               </div>
-              <div className="flex justify-between items-center">
-                <label className="text-gray-300 font-medium">Allow Reverse Splits</label>
-                <button 
-                  onClick={() => updateSettings('allow_reverse_splits', !settings.allow_reverse_splits)}
-                  className={`w-12 h-6 rounded-full transition-colors relative ${settings.allow_reverse_splits ? 'bg-rose-500' : 'bg-gray-700'}`}
-                >
-                  <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${settings.allow_reverse_splits ? 'translate-x-6' : 'translate-x-0'}`} />
-                </button>
-              </div>
-              <div>
-                <label className="block text-gray-300 font-medium mb-2">Trade Size ($ per buy)</label>
-                <input 
-                  type="text" 
-                  inputMode="numeric"
-                  value={localTradeSize}
-                  onChange={handleTradeSizeChange}
-                  onBlur={handleTradeSizeBlur}
-                  className="w-full bg-gray-950 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-indigo-500 transition-colors"
-                />
-              </div>
-              <button 
-                onClick={() => fetchDashboardData(true)}
-                disabled={isSyncing}
-                className={`w-full font-medium py-2 rounded-lg transition-colors border ${isSyncing ? 'bg-gray-700 text-gray-400 border-gray-600 cursor-not-allowed' : 'bg-gray-800 hover:bg-gray-700 text-white border-gray-700'}`}
-              >
-                {isSyncing ? 'Syncing...' : 'Force Refresh Sync'}
-              </button>
             </div>
           </div>
 
@@ -371,11 +485,12 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
                     <th className="pb-3 px-4 font-semibold">Type</th>
                     <th className="pb-3 px-4 font-semibold">Ratio</th>
                     <th className="pb-3 px-4 font-semibold">Status</th>
+                    <th className="pb-3 px-4 font-semibold text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-800/50">
                   {trades.length === 0 ? (
-                    <tr><td colSpan={6} className="py-8 text-center text-gray-500">No signals logged yet.</td></tr>
+                    <tr><td colSpan={7} className="py-8 text-center text-gray-500">No signals logged yet.</td></tr>
                   ) : trades.map((t) => {
                     const d = new Date(t.created_at);
                     const time = new Intl.DateTimeFormat('default', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(d);
@@ -401,6 +516,14 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
                           <span className={`text-sm ${t.execution_status.includes('Executed') ? 'text-emerald-400' : t.execution_status.includes('Failed') ? 'text-rose-400' : 'text-amber-400'}`}>
                             {t.execution_status}
                           </span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <button 
+                            onClick={() => handleStrikePreFill(t.ticker)}
+                            className="bg-gray-800 hover:bg-rose-600/90 text-gray-300 hover:text-white px-3 py-1.5 rounded transition-colors text-xs font-bold uppercase tracking-wider border border-gray-700 hover:border-rose-500 shadow-sm"
+                          >
+                            Strike
+                          </button>
                         </td>
                       </tr>
                     );

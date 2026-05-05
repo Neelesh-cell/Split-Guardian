@@ -380,7 +380,7 @@ export async function GET(request: Request) {
       console.log(`Found ${pendingRetries.length} pending trades ready for retry.`);
       for (const retry of pendingRetries) {
         console.log(`[Retry] Attempting ${retry.ticker}...`);
-        const tradeRes = await executeMarketBuy(retry.ticker, Number(settings.trade_size_dollars));
+        const tradeRes = await executeMarketBuy(retry.ticker, 'quantity', 1);
         
         let newStatus = '';
         if (tradeRes.success) {
@@ -481,7 +481,7 @@ export async function GET(request: Request) {
         shouldLog = true; // Log once for manual review
       } else {
         // Forward Split or (Reverse Split + Allowed) → Execute via Alpaca
-        const tradeRes = await executeMarketBuy(signal.ticker, Number(settings.trade_size_dollars));
+        const tradeRes = await executeMarketBuy(signal.ticker, 'quantity', 1);
 
         if (tradeRes.success) {
           executionStatus = `Executed - Buy ${tradeRes.qty} shares`;

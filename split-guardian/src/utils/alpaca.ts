@@ -2,15 +2,24 @@ export const ALPACA_API_KEY = process.env.APCA_API_KEY_ID || 'PKLI4IWRXT5DVA27FY
 export const ALPACA_API_SECRET = process.env.APCA_API_SECRET_KEY || 'Eud1TwbmmCDRNwzXZGGgJNcXm13WmG81cugG7wcE1GqX';
 export const ALPACA_BASE_URL = 'https://paper-api.alpaca.markets';
 
-export async function getAlpacaAccount() {
-  const res = await fetch(`${ALPACA_BASE_URL}/v2/account`, {
-    headers: {
-      'APCA-API-KEY-ID': ALPACA_API_KEY,
-      'APCA-API-SECRET-KEY': ALPACA_API_SECRET,
+function getHeaders(accessToken?: string) {
+  if (accessToken) {
+    return {
+      'Authorization': `Bearer ${accessToken}`,
       'Accept': 'application/json'
-    },
-    // Don't cache to get real-time P/L
-    cache: 'no-store'
+    };
+  }
+  return {
+    'APCA-API-KEY-ID': ALPACA_API_KEY,
+    'APCA-API-SECRET-KEY': ALPACA_API_SECRET,
+    'Accept': 'application/json'
+  };
+}
+
+export async function getAlpacaAccount(accessToken?: string) {
+  const res = await fetch(`${ALPACA_BASE_URL}/v2/account`, {
+    headers: getHeaders(accessToken),
+    cache: 'no-store' // Don't cache to get real-time P/L
   });
   
   if (!res.ok) {
@@ -19,13 +28,9 @@ export async function getAlpacaAccount() {
   return res.json();
 }
 
-export async function getAlpacaPositions() {
+export async function getAlpacaPositions(accessToken?: string) {
   const res = await fetch(`${ALPACA_BASE_URL}/v2/positions`, {
-    headers: {
-      'APCA-API-KEY-ID': ALPACA_API_KEY,
-      'APCA-API-SECRET-KEY': ALPACA_API_SECRET,
-      'Accept': 'application/json'
-    },
+    headers: getHeaders(accessToken),
     cache: 'no-store'
   });
 
@@ -35,13 +40,9 @@ export async function getAlpacaPositions() {
   return res.json();
 }
 
-export async function getAsset(ticker: string) {
+export async function getAsset(ticker: string, accessToken?: string) {
   const res = await fetch(`${ALPACA_BASE_URL}/v2/assets/${ticker}`, {
-    headers: {
-      'APCA-API-KEY-ID': ALPACA_API_KEY,
-      'APCA-API-SECRET-KEY': ALPACA_API_SECRET,
-      'Accept': 'application/json'
-    },
+    headers: getHeaders(accessToken),
     cache: 'no-store'
   });
   
@@ -54,16 +55,11 @@ export async function getAsset(ticker: string) {
   return res.json();
 }
 
-export async function getLatestQuote(ticker: string) {
+export async function getLatestQuote(ticker: string, accessToken?: string) {
   // Use Alpaca Data API to get the latest quote
-  // Paper keys can access the data API using the data API base URL
   const DATA_URL = 'https://data.alpaca.markets/v2/stocks';
   const res = await fetch(`${DATA_URL}/${ticker}/quotes/latest`, {
-    headers: {
-      'APCA-API-KEY-ID': ALPACA_API_KEY,
-      'APCA-API-SECRET-KEY': ALPACA_API_SECRET,
-      'Accept': 'application/json'
-    },
+    headers: getHeaders(accessToken),
     cache: 'no-store'
   });
   
@@ -74,11 +70,11 @@ export async function getLatestQuote(ticker: string) {
   return data.quote.ap; // Ask price
 }
 
-export async function executeMarketBuy(ticker: string, tradeSizeDollars: number) {
+export async function executeMarketBuy(ticker: string, orderType: 'quantity' | 'amount', value: number, accessToken?: string) {
   try {
     // 1. Pre-Trade Verification (Asset Check)
     try {
-      const asset = await getAsset(ticker);
+      const asset = await getAsset(ticker, accessToken);
       if (asset.status !== 'active') {
         throw new Error(`ASSET_INACTIVE`);
       }
@@ -93,21 +89,26 @@ export async function executeMarketBuy(ticker: string, tradeSizeDollars: number)
       throw new Error(`Asset verification failed: ${e.message}`);
     }
 
-    // 2. Quote Check
-    const askPrice = await getLatestQuote(ticker);
+    // 2. Quote Check & Qty Calculation
+    const askPrice = await getLatestQuote(ticker, accessToken);
     if (!askPrice || askPrice <= 0) {
       throw new Error(`Invalid ask price for ${ticker}: ${askPrice}`);
     }
     
-    const qty = Math.floor(tradeSizeDollars / askPrice);
-    
-    if (qty <= 0) {
-      throw new Error(`Calculated quantity is 0 for ${ticker} (Trade Size: $${tradeSizeDollars}, Ask Price: $${askPrice})`);
+    let finalQty = 0;
+    if (orderType === 'amount') {
+      finalQty = Math.floor(value / askPrice);
+      if (finalQty <= 0) {
+        throw new Error(`Calculated quantity is 0 for ${ticker} (Trade Size: $${value}, Ask Price: $${askPrice})`);
+      }
+    } else {
+      finalQty = value;
+      if (finalQty <= 0) throw new Error(`Quantity must be greater than 0.`);
     }
 
     const orderPayload = {
       symbol: ticker,
-      qty: String(qty),
+      qty: String(finalQty),
       side: 'buy',
       type: 'market',
       time_in_force: 'day'
@@ -116,10 +117,8 @@ export async function executeMarketBuy(ticker: string, tradeSizeDollars: number)
     const res = await fetch(`${ALPACA_BASE_URL}/v2/orders`, {
       method: 'POST',
       headers: {
-        'APCA-API-KEY-ID': ALPACA_API_KEY,
-        'APCA-API-SECRET-KEY': ALPACA_API_SECRET,
+        ...getHeaders(accessToken),
         'Content-Type': 'application/json',
-        'Accept': 'application/json'
       },
       body: JSON.stringify(orderPayload)
     });
@@ -130,7 +129,63 @@ export async function executeMarketBuy(ticker: string, tradeSizeDollars: number)
     }
 
     const orderData = await res.json();
-    return { success: true, order: orderData, qty, askPrice };
+    return { success: true, order: orderData, qty: finalQty, askPrice };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+
+export async function executeMarketSell(ticker: string, orderType: 'quantity' | 'amount', value: number, accessToken?: string) {
+  try {
+    // 1. Pre-trade Position Check
+    const positions = await getAlpacaPositions(accessToken);
+    const position = positions.find((p: any) => p.symbol === ticker);
+    
+    if (!position) {
+      throw new Error(`Insufficient shares to sell: You do not hold any shares of ${ticker}.`);
+    }
+
+    const heldQty = parseFloat(position.qty);
+    const currentPrice = parseFloat(position.current_price);
+
+    let sellQty = 0;
+    if (orderType === 'amount') {
+      sellQty = Math.floor(value / currentPrice);
+    } else {
+      sellQty = value;
+    }
+
+    if (sellQty <= 0) {
+      throw new Error(`Calculated sell quantity is 0 for ${ticker} (Current Price: $${currentPrice}).`);
+    }
+    if (sellQty > heldQty) {
+      throw new Error(`Insufficient shares: Attempted to sell ${sellQty} shares, but only hold ${heldQty} shares of ${ticker}.`);
+    }
+
+    const orderPayload = {
+      symbol: ticker,
+      qty: String(sellQty),
+      side: 'sell',
+      type: 'market',
+      time_in_force: 'day'
+    };
+
+    const res = await fetch(`${ALPACA_BASE_URL}/v2/orders`, {
+      method: 'POST',
+      headers: {
+        ...getHeaders(accessToken),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(orderPayload)
+    });
+
+    if (!res.ok) {
+      const errTxt = await res.text();
+      return { success: false, error: errTxt };
+    }
+
+    const orderData = await res.json();
+    return { success: true, order: orderData, qty: sellQty, currentPrice };
   } catch (error: any) {
     return { success: false, error: error.message };
   }
