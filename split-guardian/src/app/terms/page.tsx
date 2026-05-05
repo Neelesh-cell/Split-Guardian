@@ -21,12 +21,12 @@ export default function TermsOfUse() {
         
         <div className="space-y-8 text-lg leading-relaxed bg-gray-900/50 backdrop-blur-md border border-gray-800 p-8 md:p-12 rounded-3xl shadow-2xl">
           
-          <div className="bg-rose-500/10 border border-rose-500/20 p-6 rounded-xl">
-            <h2 className="text-xl font-bold text-rose-400 mb-3 uppercase tracking-wider flex items-center">
-              <svg className="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-              Critical Risk Disclosure
+          <div className="bg-gray-800/50 border border-gray-700 p-4 rounded-lg">
+            <h2 className="text-lg font-bold text-gray-300 mb-2 uppercase tracking-wide flex items-center">
+              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              Disclaimer
             </h2>
-            <p className="text-rose-200/90 font-medium">
+            <p className="text-sm text-gray-400">
               Trading stocks, equities, and other financial instruments involves substantial risk of loss and is not suitable for every investor. The valuation of stock splits can fluctuate, and you may lose some or all of your initial investment. <strong>Split-Guardian does not guarantee profits, minimize losses, or provide financial advice.</strong> Past performance of stock split strategies is not indicative of future results. You are solely responsible for your trading decisions and account balances.
             </p>
           </div>
