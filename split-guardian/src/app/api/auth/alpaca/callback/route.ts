@@ -87,7 +87,7 @@ export async function GET(request: Request) {
     }
 
     // 4. Redirect the user back to the main dashboard with the session email
-    const redirectUrl = new URL(`/?success=alpaca_linked&session_email=${encodeURIComponent(email)}`, request.url);
+    const redirectUrl = new URL(`/dashboard?success=alpaca_linked&session_email=${encodeURIComponent(email)}`, request.url);
     return NextResponse.redirect(redirectUrl);
 
   } catch (error: any) {

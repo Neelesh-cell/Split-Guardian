@@ -18,7 +18,7 @@ export default function LogsPage() {
     // Auth Check
     const stored = localStorage.getItem('split_guardian_session');
     if (!stored) {
-      router.push('/');
+      router.push('/connect');
       return;
     }
 
@@ -68,15 +68,13 @@ export default function LogsPage() {
         
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 md:gap-0 bg-gray-900/50 backdrop-blur-md border border-gray-800 p-4 md:p-6 rounded-2xl shadow-2xl shrink-0">
           <div>
-            <div className="flex items-center gap-3">
-              <Link href="/" className="p-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors text-gray-400 hover:text-white">
-                <svg className="w-5 h-5" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-              </Link>
-              <h1 className="text-2xl font-extrabold tracking-tight text-white">
-                Full Execution Logs
-              </h1>
+            <h1 className="text-2xl font-extrabold tracking-tight text-white">
+              Full Execution Logs
+            </h1>
+            <div className="flex gap-4 mt-2 text-sm font-medium">
+              <Link href="/dashboard" className="text-gray-400 hover:text-white transition-colors pb-1">Dashboard</Link>
+              <Link href="/logs" className="text-white border-b-2 border-indigo-400 pb-1">Logs</Link>
             </div>
-            <p className="text-gray-400 text-sm mt-1 ml-11">Complete auditing history across all accounts.</p>
           </div>
           
           <div className="w-full md:w-72">
@@ -147,7 +145,7 @@ export default function LogsPage() {
                       </td>
                       <td className="py-4 px-6 text-right">
                         <Link 
-                          href={`/?strike=${t.ticker}`}
+                          href={`/dashboard?strike=${t.ticker}`}
                           className="inline-block bg-gray-800 hover:bg-rose-600/90 text-gray-300 hover:text-white px-4 py-1.5 rounded-lg transition-colors text-xs font-bold uppercase tracking-wider border border-gray-700 hover:border-rose-500 shadow-sm"
                         >
                           Strike
