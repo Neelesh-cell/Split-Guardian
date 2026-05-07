@@ -13,15 +13,34 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: false, error: 'Email parameter is required' }, { status: 400 });
     }
 
-    const { data: user, error: userError } = await supabase.from('users').select('alpaca_access_token').eq('user_email', email).single();
+    const devEmail = process.env.NEXT_PUBLIC_DEV_EMAIL;
+    const isDev = email === devEmail;
 
-    if (userError || !user?.alpaca_access_token) {
-      return NextResponse.json({ success: false, error: 'User not found or Alpaca not connected' }, { status: 404 });
+    let { data: user, error: userError } = await supabase.from('users').select('*').eq('user_email', email).single();
+
+    // If user doesn't exist but it's the dev email, create the record so settings can be saved
+    if (userError || !user) {
+      if (isDev) {
+        const { data: newUser, error: insertError } = await supabase.from('users').insert({ user_email: email }).select().single();
+        if (!insertError && newUser) {
+          user = newUser;
+        } else {
+          return NextResponse.json({ success: false, error: 'Failed to create dev user' }, { status: 500 });
+        }
+      } else {
+        return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
+      }
     }
 
+    if (!isDev && !user?.alpaca_access_token) {
+      return NextResponse.json({ success: false, error: 'User has no Alpaca access token' }, { status: 400 });
+    }
+
+    const tokenToUse = (isDev && !user?.alpaca_access_token) ? undefined : user?.alpaca_access_token;
+
     const [account, positions] = await Promise.all([
-      getAlpacaAccount(user.alpaca_access_token),
-      getAlpacaPositions(user.alpaca_access_token),
+      getAlpacaAccount(tokenToUse),
+      getAlpacaPositions(tokenToUse),
     ]);
     
     const equity = parseFloat(account.equity);

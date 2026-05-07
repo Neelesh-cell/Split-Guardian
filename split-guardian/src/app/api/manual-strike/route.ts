@@ -20,6 +20,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Invalid value' }, { status: 400 });
     }
 
+    const devEmail = process.env.NEXT_PUBLIC_DEV_EMAIL;
+    const isDev = email === devEmail;
+
     // 1. Fetch user from Supabase
     const { data: user, error } = await supabase.from('users').select('*').eq('user_email', email).single();
     if (error || !user) {
@@ -27,18 +30,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
     }
 
-    if (!user.alpaca_access_token) {
+    if (!isDev && !user.alpaca_access_token) {
       return NextResponse.json({ success: false, error: 'User has no Alpaca access token' }, { status: 400 });
     }
+
+    const tokenToUse = (isDev && !user.alpaca_access_token) ? undefined : user.alpaca_access_token;
 
     // 2. Execute trade for this user only
     console.log(`Executing manual strike for user: ${email} | ${action} ${value} ${orderType} of ${ticker}`);
     
     let userRes;
     if (action.toLowerCase() === 'buy') {
-      userRes = await executeMarketBuy(ticker, orderType, numValue, user.alpaca_access_token);
+      userRes = await executeMarketBuy(ticker, orderType, numValue, tokenToUse);
     } else {
-      userRes = await executeMarketSell(ticker, orderType, numValue, user.alpaca_access_token);
+      userRes = await executeMarketSell(ticker, orderType, numValue, tokenToUse);
     }
 
     const result = {
