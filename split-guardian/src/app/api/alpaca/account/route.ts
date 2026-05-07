@@ -25,7 +25,8 @@ export async function GET(request: Request) {
         if (!insertError && newUser) {
           user = newUser;
         } else {
-          return NextResponse.json({ success: false, error: 'Failed to create dev user' }, { status: 500 });
+          console.warn('Failed to create dev user, falling back to empty user', insertError);
+          user = { user_email: email, alpaca_access_token: null };
         }
       } else {
         return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });

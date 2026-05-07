@@ -24,10 +24,15 @@ export async function POST(request: Request) {
     const isDev = email === devEmail;
 
     // 1. Fetch user from Supabase
-    const { data: user, error } = await supabase.from('users').select('*').eq('user_email', email).single();
+    let { data: user, error } = await supabase.from('users').select('*').eq('user_email', email).single();
     if (error || !user) {
-      console.error(`User not found for email ${email}`);
-      return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
+      if (isDev) {
+        console.warn('Dev user not found in DB, proceeding with local fallback.');
+        user = { user_email: email, alpaca_access_token: null, alpaca_account_id: 'dev_account' };
+      } else {
+        console.error(`User not found for email ${email}`);
+        return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
+      }
     }
 
     if (!isDev && !user.alpaca_access_token) {
