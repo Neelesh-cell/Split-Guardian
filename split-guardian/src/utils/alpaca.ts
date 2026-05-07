@@ -2,7 +2,7 @@ export const ALPACA_API_KEY = process.env.APCA_API_KEY_ID || 'PKLI4IWRXT5DVA27FY
 export const ALPACA_API_SECRET = process.env.APCA_API_SECRET_KEY || 'Eud1TwbmmCDRNwzXZGGgJNcXm13WmG81cugG7wcE1GqX';
 export const ALPACA_BASE_URL = 'https://paper-api.alpaca.markets';
 
-function getHeaders(accessToken?: string) {
+function getHeaders(accessToken?: string): Record<string, string> {
   if (accessToken) {
     return {
       'Authorization': `Bearer ${accessToken}`,

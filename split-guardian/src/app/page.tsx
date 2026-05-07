@@ -74,7 +74,7 @@ function LandingPage({ onConnect }: { onConnect: (email: string) => void }) {
   );
 }
 
-function Dashboard({ onLogout }: { onLogout: () => void }) {
+function Dashboard({ onLogout, sessionEmail }: { onLogout: () => void, sessionEmail: string }) {
   const [account, setAccount] = useState<any>(null);
   const [positions, setPositions] = useState<any[]>([]);
   const [trades, setTrades] = useState<any[]>([]);
@@ -94,17 +94,17 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
   const fetchDashboardData = async (manualSync = false) => {
     if (manualSync) setIsSyncing(true);
     try {
-      const accRes = await fetch('/api/alpaca/account');
+      const accRes = await fetch(`/api/alpaca/account?email=${encodeURIComponent(sessionEmail)}`);
       if (accRes.ok) {
         const accData = await accRes.json();
         setAccount(accData);
         setPositions(accData.positions || []);
       }
 
-      const { data: tradeData } = await supabase.from('trade_log').select('*').order('created_at', { ascending: false }).limit(20);
+      const { data: tradeData } = await supabase.from('trade_log').select('*').eq('user_email', sessionEmail).order('created_at', { ascending: false }).limit(20);
       if (tradeData) setTrades(tradeData);
 
-      const { data: setData } = await supabase.from('settings').select('*').eq('id', 1).single();
+      const { data: setData } = await supabase.from('users').select('*').eq('user_email', sessionEmail).single();
       if (setData) {
         setSettings(setData);
         setLocalTradeSize(String(setData.trade_size_dollars));
@@ -137,7 +137,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
     const channel = supabase.channel('public:trade_log')
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'trade_log' },
+        { event: 'INSERT', schema: 'public', table: 'trade_log', filter: `user_email=eq.${sessionEmail}` },
         (payload) => {
           setTrades((currentTrades) => {
             const newTrades = [payload.new, ...currentTrades];
@@ -181,7 +181,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
     setSavingSettings(true);
     
     try {
-      const { error } = await supabase.from('settings').update({ [key]: value }).eq('id', 1);
+      const { error } = await supabase.from('users').update({ [key]: value }).eq('user_email', sessionEmail);
       if (error) throw error;
     } catch (err) {
       console.error('Failed to update settings:', err);
@@ -214,7 +214,8 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
           ticker: msTicker,
           action: msAction,
           tradeBy: msTradeBy,
-          value: msValue
+          value: msValue,
+          email: sessionEmail
         })
       });
       const data = await res.json();
@@ -413,8 +414,8 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
             <div className="bg-gray-900/50 backdrop-blur-md border border-rose-900/50 p-4 md:p-6 rounded-2xl shadow-xl">
               <div className="flex items-center gap-3 mb-6">
                 <h2 className="text-xl font-bold text-rose-400">Manual Strike</h2>
-                <div className="px-2 py-0.5 rounded bg-rose-500/10 border border-rose-500/20 text-[10px] font-bold text-rose-400 uppercase tracking-widest">
-                  Multi-Account
+                <div className="px-2 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/20 text-[10px] font-bold text-indigo-400 uppercase tracking-widest">
+                  Isolated Mode
                 </div>
               </div>
               
@@ -635,5 +636,5 @@ export default function Main() {
     return <LandingPage onConnect={handleConnect} />;
   }
 
-  return <Dashboard onLogout={handleLogout} />;
+  return <Dashboard onLogout={handleLogout} sessionEmail={sessionEmail} />;
 }

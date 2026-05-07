@@ -364,14 +364,14 @@ export async function GET(request: Request) {
     console.log('  Today (ET):', todayET());
     console.log('══════════════════════════════════════════════');
 
-    // 1. Fetch Global Settings
-    const { data: settingsData } = await supabase.from('settings').select('*').eq('id', 1).single();
-    const settings = settingsData || { allow_reverse_splits: false, trade_size_dollars: 1, position_type: 'quantity', is_auto_buy_enabled: true };
+    // 1. Fetch All Users and their Settings
+    const { data: users } = await supabase.from('users').select('*');
+    if (!users || users.length === 0) {
+      console.log('No users found. Exiting.');
+      return NextResponse.json({ success: true, message: 'No users configured' });
+    }
 
-    const orderType = settings.position_type === 'amount' ? 'amount' : 'quantity';
-    const tradeSize = Number(settings.trade_size_dollars);
-
-    // 1.5. THE HUNTER: Auto-Retry Engine
+    // 1.5. THE HUNTER: Auto-Retry Engine (Per-User)
     console.log('--- Checking for Pending Retries ---');
     const { data: pendingRetries } = await supabase
       .from('trade_log')
@@ -382,15 +382,21 @@ export async function GET(request: Request) {
     if (pendingRetries && pendingRetries.length > 0) {
       console.log(`Found ${pendingRetries.length} pending trades ready for retry.`);
       for (const retry of pendingRetries) {
-        console.log(`[Retry] Attempting ${retry.ticker}...`);
-        const tradeRes = await executeMarketBuy(retry.ticker, orderType, tradeSize);
+        const user = users.find(u => u.user_email === retry.user_email);
+        if (!user || !user.alpaca_access_token) continue;
+
+        console.log(`[Retry] Attempting ${retry.ticker} for ${user.user_email}...`);
+        // We need the original order type/size. For now we use the user's current settings.
+        const orderType = user.position_type === 'amount' ? 'amount' : 'quantity';
+        const tradeSize = Number(user.trade_size_dollars);
+        
+        const tradeRes = await executeMarketBuy(retry.ticker, orderType, tradeSize, user.alpaca_access_token);
         
         let newStatus = '';
         if (tradeRes.success) {
           newStatus = `Executed - Buy ${tradeRes.qty} shares`;
           console.log(`[Retry Success] ${retry.ticker}: ${newStatus}`);
         } else {
-          // Failed a second time -> mark persistent
           newStatus = `Skipped - Persistent Halt (${tradeRes.error.substring(0, 50)})`;
           console.warn(`[Retry Failed] ${retry.ticker}: ${newStatus}`);
         }
@@ -454,92 +460,102 @@ export async function GET(request: Request) {
       }
       const splitType = parsed.type;
 
-      // 24-Hour Cooldown Check
-      const oneDayAgo = new Date();
-      oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+      // Per-User Execution Logic
+      for (const user of users) {
+        if (!user.alpaca_access_token) continue; // Skip users without Alpaca linked
 
-      const { data: recentTrades } = await supabase
-        .from('trade_log')
-        .select('id')
-        .eq('ticker', signal.ticker)
-        .gte('created_at', oneDayAgo.toISOString());
+        const orderType = user.position_type === 'amount' ? 'amount' : 'quantity';
+        const tradeSize = Number(user.trade_size_dollars);
 
-      if (recentTrades && recentTrades.length > 0) {
-        // Silently skip if already processed in the last 7 days
-        processed.push({ ticker: signal.ticker, status: 'Skipped - Cooldown', source: signal.source });
-        console.log(`[Cooldown] ${signal.ticker} — already logged within 7 days. Exiting silently.`);
-        continue;
-      }
+        // 24-Hour Cooldown Check
+        const oneDayAgo = new Date();
+        oneDayAgo.setDate(oneDayAgo.getDate() - 1);
 
-      // Execution Logic
-      let executionStatus = 'Processed';
-      let shouldLog = false;
-      let retryAt = null;
+        const { data: recentTrades } = await supabase
+          .from('trade_log')
+          .select('id')
+          .eq('ticker', signal.ticker)
+          .eq('user_email', user.user_email)
+          .gte('created_at', oneDayAgo.toISOString());
 
-      if (!settings.is_auto_buy_enabled) {
-        executionStatus = 'Skipped - Auto-Buy Disabled';
-        shouldLog = false; // Do not log to DB
-      } else if (splitType === 'reverse' && !settings.allow_reverse_splits) {
-        executionStatus = 'Skipped - Restricted Type';
-        shouldLog = true; // Log once for manual review
-      } else {
-        // Forward Split or (Reverse Split + Allowed) → Execute via Alpaca
-        const tradeRes = await executeMarketBuy(signal.ticker, orderType, tradeSize);
+        if (recentTrades && recentTrades.length > 0) {
+          // Silently skip if already processed in the last 24 hours
+          console.log(`[Cooldown] ${signal.ticker} — already logged for ${user.user_email}. Exiting silently.`);
+          continue;
+        }
 
-        if (tradeRes.success) {
-          executionStatus = `Executed - Buy ${tradeRes.qty} shares`;
-          shouldLog = true;
+        // Execution Logic
+        let executionStatus = 'Processed';
+        let shouldLog = false;
+        let retryAt = null;
+
+        if (!user.is_auto_buy_enabled) {
+          executionStatus = 'Skipped - Auto-Buy Disabled';
+          shouldLog = false; // Do not log to DB
+        } else if (splitType === 'reverse' && !user.allow_reverse_splits) {
+          executionStatus = 'Skipped - Restricted Type';
+          shouldLog = true; // Log once for manual review
         } else {
-          const errStr = tradeRes.error || '';
-          
-          if (errStr.includes('ASSET_INACTIVE')) {
-            executionStatus = 'Pending - Exchange Halt';
+          // Forward Split or (Reverse Split + Allowed) → Execute via Alpaca
+          const tradeRes = await executeMarketBuy(signal.ticker, orderType, tradeSize, user.alpaca_access_token);
+
+          if (tradeRes.success) {
+            executionStatus = `Executed - Buy ${tradeRes.qty} shares`;
             shouldLog = true;
-            retryAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
-            console.warn(`[Skip - Halt] ${signal.ticker}: Asset Inactive`);
-          } else if (errStr.includes('NOT_TRADABLE')) {
-            executionStatus = 'Pending - OTC Restricted';
-            shouldLog = true;
-            retryAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
-            console.warn(`[Skip - OTC] ${signal.ticker}: Not Tradable`);
-          } else if (errStr.includes('Failed to fetch quote') || errStr.includes('Invalid ask price') || errStr.includes('Calculated quantity is 0') || errStr.includes('ASSET_NOT_FOUND')) {
-            executionStatus = 'Pending - Market Illiquidity';
-            shouldLog = true;
-            retryAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
-            console.warn(`[Skip - Price] ${signal.ticker}: ${errStr.substring(0, 50)}`);
           } else {
-            // High-priority issue (e.g. Insufficient funds, API key)
-            executionStatus = `Failed - ${errStr.substring(0, 50)}`;
-            shouldLog = true;
-            console.error(`[Trade Failed] ${signal.ticker}: ${errStr}`);
+            const errStr = tradeRes.error || '';
+            
+            if (errStr.includes('ASSET_INACTIVE')) {
+              executionStatus = 'Pending - Exchange Halt';
+              shouldLog = true;
+              retryAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+              console.warn(`[Skip - Halt] ${signal.ticker} for ${user.user_email}: Asset Inactive`);
+            } else if (errStr.includes('NOT_TRADABLE')) {
+              executionStatus = 'Pending - OTC Restricted';
+              shouldLog = true;
+              retryAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+              console.warn(`[Skip - OTC] ${signal.ticker} for ${user.user_email}: Not Tradable`);
+            } else if (errStr.includes('Failed to fetch quote') || errStr.includes('Invalid ask price') || errStr.includes('Calculated quantity is 0') || errStr.includes('ASSET_NOT_FOUND')) {
+              executionStatus = 'Pending - Market Illiquidity';
+              shouldLog = true;
+              retryAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+              console.warn(`[Skip - Price] ${signal.ticker} for ${user.user_email}: ${errStr.substring(0, 50)}`);
+            } else {
+              // High-priority issue (e.g. Insufficient funds, API key)
+              executionStatus = `Failed - ${errStr.substring(0, 50)}`;
+              shouldLog = true;
+              console.error(`[Trade Failed] ${signal.ticker} for ${user.user_email}: ${errStr}`);
+            }
           }
         }
-      }
 
-      // Log to Supabase only if it's a meaningful action
-      if (shouldLog) {
-        const payload: any = {
-          ticker: signal.ticker,
-          split_ratio: signal.ratio,
-          source_site: signal.source,
-          split_type: splitType,
-          execution_status: executionStatus,
-        };
-        if (retryAt) {
-          payload.retry_at = retryAt;
+        // Log to Supabase only if it's a meaningful action
+        if (shouldLog) {
+          const payload: any = {
+            user_email: user.user_email,
+            ticker: signal.ticker,
+            split_ratio: signal.ratio,
+            source_site: signal.source,
+            split_type: splitType,
+            execution_status: executionStatus,
+          };
+          if (retryAt) {
+            payload.retry_at = retryAt;
+          }
+          await supabase.from('trade_log').insert(payload);
         }
-        await supabase.from('trade_log').insert(payload);
-      }
 
-      processed.push({
-        ticker: signal.ticker,
-        split_type: splitType,
-        ratio: signal.ratio,
-        date: signal.date,
-        source: signal.source,
-        status: executionStatus,
-      });
-      console.log(`[Processed] ${signal.ticker} | ${splitType} ${signal.ratio} | ${executionStatus}`);
+        processed.push({
+          user: user.user_email,
+          ticker: signal.ticker,
+          split_type: splitType,
+          ratio: signal.ratio,
+          date: signal.date,
+          source: signal.source,
+          status: executionStatus,
+        });
+        console.log(`[Processed] ${user.user_email} | ${signal.ticker} | ${splitType} ${signal.ratio} | ${executionStatus}`);
+      }
     }
 
     console.log('══════════════════════════════════════════════');
