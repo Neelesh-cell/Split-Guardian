@@ -2,11 +2,16 @@ import { NextResponse } from 'next/server';
 import { supabase } from '@/utils/supabase';
 import { executeMarketBuy } from '@/utils/alpaca';
 import * as cheerio from 'cheerio';
+import chromium from '@sparticuz/chromium-min';
+import puppeteer from 'puppeteer-core';
+import axios from 'axios';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
+export const maxDuration = 60; // Max allowed by Vercel Hobby/Pro for serverless to prevent immediate timeouts
 
-// ─── Professional User-Agent pool (rotated per-request) ───────────────────────
+// ─── Shared Configurations ──────────────────────────────────────────────────
+const CAPMONSTER_API_KEY = process.env.CAPMONSTER_API_KEY || '';
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
@@ -17,36 +22,29 @@ function randomUA(): string {
   return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 }
 
-// ─── Shared Types ─────────────────────────────────────────────────────────────
 interface SplitSignal {
   ticker: string;
   company?: string;
   ratio: string;
   source: string;
-  date: string;       // Ex-date / effective date (YYYY-MM-DD)
+  date: string;       // YYYY-MM-DD
   exchange?: string;
 }
 
-// ─── Date Helpers ─────────────────────────────────────────────────────────────
-/** Returns YYYY-MM-DD for "today" in US-Eastern time */
 function todayET(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
 }
 
-/** Parse a date string like "04/30/2026" or "2026-04-30" → YYYY-MM-DD */
 function normalizeDate(raw: string): string {
   const trimmed = raw.trim();
-  // MM/DD/YYYY
   const slashMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (slashMatch) {
     return `${slashMatch[3]}-${slashMatch[1].padStart(2, '0')}-${slashMatch[2].padStart(2, '0')}`;
   }
-  // Already YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
   return trimmed;
 }
 
-/** Is the ex-date within the upcoming window (today → today+3 days)? */
 function isUpcoming(exDate: string, windowDays = 3): boolean {
   const today = new Date(todayET() + 'T00:00:00');
   const target = new Date(exDate + 'T00:00:00');
@@ -55,11 +53,9 @@ function isUpcoming(exDate: string, windowDays = 3): boolean {
   return diffDays >= 0 && diffDays <= windowDays;
 }
 
-// ─── Ratio Parsing ────────────────────────────────────────────────────────────
 function parseRatio(ratioStr: string) {
   let num1 = 0, num2 = 0;
   const cleaned = ratioStr.replace(/\s+/g, '');
-
   if (cleaned.includes(':')) {
     [num1, num2] = cleaned.split(':').map(Number);
   } else if (cleaned.toLowerCase().includes('-for-')) {
@@ -69,283 +65,258 @@ function parseRatio(ratioStr: string) {
   } else {
     return { type: 'unknown' as const, ratio: ratioStr };
   }
-
   if (isNaN(num1) || isNaN(num2) || num2 === 0) {
     return { type: 'unknown' as const, ratio: ratioStr };
   }
-
   return {
     type: (num1 > num2 ? 'forward' : 'reverse') as 'forward' | 'reverse',
     ratio: ratioStr,
   };
 }
 
+// ─── Puppeteer / CapMonster Utilities ─────────────────────────────────────────
+
+async function getBrowser() {
+  return await puppeteer.launch({
+    args: [...chromium.args, '--hide-scrollbars', '--disable-web-security'],
+    defaultViewport: chromium.defaultViewport,
+    executablePath: await chromium.executablePath(
+      'https://github.com/Sparticuz/chromium/releases/download/v131.0.1/chromium-v131.0.1-pack.tar'
+    ),
+    headless: chromium.headless,
+    ignoreHTTPSErrors: true,
+  });
+}
+
+/** 
+ * Uses CapMonster CloudflareTask to get clearance cookies if Turnstile isn't enough.
+ * CloudflareTask solves managed challenges returning a cf_clearance cookie.
+ */
+async function solveCloudflareChallengeCookie(url: string, html: string): Promise<any | null> {
+    try {
+      const createRes = await axios.post('https://api.capmonster.cloud/createTask', {
+        clientKey: CAPMONSTER_API_KEY,
+        task: {
+          type: 'CloudflareTask',
+          websiteURL: url,
+          htmlPageBase64: Buffer.from(html).toString('base64'),
+        }
+      });
+  
+      if (createRes.data.errorId !== 0) return null;
+      const taskId = createRes.data.taskId;
+  
+      for (let i = 0; i < 20; i++) {
+        await new Promise(r => setTimeout(r, 5000));
+        const res = await axios.post('https://api.capmonster.cloud/getTaskResult', {
+          clientKey: CAPMONSTER_API_KEY,
+          taskId
+        });
+        if (res.data.status === 'ready') return res.data.solution;
+        if (res.data.errorId !== 0) return null;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
-// SCRAPER 1: BENZINGA (Primary — proven to work with server-side fetch)
-// Target: "Upcoming Splits" from their stock-splits calendar table
+// SCRAPER 1: BENZINGA 
 // ═══════════════════════════════════════════════════════════════════════════════
 async function scrapeBenzinga(): Promise<SplitSignal[]> {
   const label = '[Benzinga]';
-  try {
-    const res = await fetch('https://www.benzinga.com/calendars/stock-splits', {
-      headers: {
-        'User-Agent': randomUA(),
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-      next: { revalidate: 0 },
-    });
+  const res = await fetch('https://www.benzinga.com/calendars/stock-splits', {
+    headers: { 'User-Agent': randomUA() },
+    next: { revalidate: 0 },
+  });
+  if (!res.ok) throw new Error(`${label} HTTP ${res.status}`);
+  const html = await res.text();
+  const $ = cheerio.load(html);
+  const results: SplitSignal[] = [];
 
-    if (!res.ok) {
-      console.warn(`${label} HTTP ${res.status}`);
-      return [];
-    }
+  $('table tbody tr').each((_i, el) => {
+    const tds = $(el).find('td');
+    if (tds.length < 5) return;
+    const rawDate = $(tds[0]).text().trim();
+    const company = $(tds[1]).text().trim();
+    const ticker = $(tds[2]).text().trim().toUpperCase();
+    const exchange = $(tds[3]).text().trim().toUpperCase();
+    const ratio = $(tds[4]).text().trim();
+    if (!ticker || !ratio || !rawDate) return;
+    results.push({ ticker, company, ratio, source: 'Benzinga', date: normalizeDate(rawDate), exchange });
+  });
 
-    const html = await res.text();
-    const $ = cheerio.load(html);
-    const results: SplitSignal[] = [];
-
-    // Benzinga table: th[0]=Ex-Date, th[1]=Company, th[2]=ticker, th[3]=exchange, th[4]=Split Ratio
-    $('table tbody tr').each((_i, el) => {
-      const tds = $(el).find('td');
-      if (tds.length < 5) return;
-
-      const rawDate = $(tds[0]).text().trim();
-      const company = $(tds[1]).text().trim();
-      const ticker = $(tds[2]).text().trim().toUpperCase();
-      const exchange = $(tds[3]).text().trim().toUpperCase();
-      const ratio = $(tds[4]).text().trim();
-
-      if (!ticker || !ratio || !rawDate) return;
-
-      const exDate = normalizeDate(rawDate);
-
-      results.push({
-        ticker,
-        company,
-        ratio,
-        source: 'Benzinga',
-        date: exDate,
-        exchange,
-      });
-    });
-
-    // Filter to upcoming splits only (today → today + 3 days)
-    const upcoming = results.filter(r => isUpcoming(r.date));
-    console.log(`${label} Scraped ${results.length} total, ${upcoming.length} upcoming.`);
-    return upcoming;
-
-  } catch (e: any) {
-    console.error(`${label} Error:`, e.message);
-    return [];
-  }
+  return results.filter(r => isUpcoming(r.date));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// SCRAPER 2: STOCKTITAN (Best-effort — may return 403)
-// Falls back gracefully if blocked.
+// SCRAPER 2: STOCKTITAN
 // ═══════════════════════════════════════════════════════════════════════════════
 async function scrapeStockTitan(): Promise<SplitSignal[]> {
   const label = '[StockTitan]';
-  // StockTitan doesn't have a public stock-split calendar page that's
-  // easy to scrape server-side (returns 403). We attempt their press
-  // release tag page; if blocked, we fail gracefully.
-  const urls = [
-    'https://stocktitan.net/press-releases/tag/stock-split/',
-    'https://www.stocktitan.net/press-releases/',
-  ];
-
-  for (const url of urls) {
+  const url = 'https://www.stocktitan.net/news/stock-splits.html';
+  let html = '';
+  
+  const res = await fetch(url, { headers: { 'User-Agent': randomUA() } });
+  if (res.ok) {
+    html = await res.text();
+  } else {
+    console.log(`${label} Fetch failed, using Puppeteer fallback.`);
+    const browser = await getBrowser();
     try {
-      const res = await fetch(url, {
-        headers: {
-          'User-Agent': randomUA(),
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.9',
-          'Referer': 'https://www.google.com/',
-        },
-        next: { revalidate: 0 },
-      });
-
-      if (!res.ok) {
-        console.warn(`${label} ${url} → HTTP ${res.status}`);
-        continue;
-      }
-
-      const html = await res.text();
-      const $ = cheerio.load(html);
-      const results: SplitSignal[] = [];
-
-      // StockTitan press releases: look for articles/links mentioning split ratios
-      $('article, .press-release, .news-item, .post').each((_i, el) => {
-        const text = $(el).text();
-        const title = $(el).find('h2, h3, .title, a').first().text().trim();
-
-        // Try to extract ticker from parenthetical like (NASDAQ: AIRE)
-        const tickerMatch = text.match(/\((?:NASDAQ|NYSE|OTC|AMEX)[:\s]+([A-Z]{1,5})\)/i);
-        // Try to extract ratio like "1-for-25" or "1:10"
-        const ratioMatch = text.match(/(\d+)\s*[-–]?\s*for\s*[-–]?\s*(\d+)/i) || text.match(/(\d+)\s*:\s*(\d+)/);
-        // Try to extract a date
-        const dateMatch = text.match(/((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4})/i)
-                       || text.match(/(\d{1,2}\/\d{1,2}\/\d{4})/);
-
-        if (tickerMatch && ratioMatch) {
-          const ticker = tickerMatch[1].toUpperCase();
-          const ratio = `${ratioMatch[1]}:${ratioMatch[2]}`;
-          let date = todayET(); // fallback to today
-          if (dateMatch) {
-            const parsed = new Date(dateMatch[1]);
-            if (!isNaN(parsed.getTime())) {
-              date = parsed.toISOString().split('T')[0];
-            }
-          }
-          results.push({ ticker, ratio, source: 'StockTitan', date, company: title.substring(0, 60) });
-        }
-      });
-
-      if (results.length > 0) {
-        const upcoming = results.filter(r => isUpcoming(r.date));
-        console.log(`${label} Scraped ${results.length} total, ${upcoming.length} upcoming from ${url}.`);
-        return upcoming;
-      }
-    } catch (e: any) {
-      console.warn(`${label} ${url} Error:`, e.message);
+      const page = await browser.newPage();
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      html = await page.content();
+    } finally {
+      await browser.close();
     }
   }
 
-  console.warn(`${label} All URLs failed or returned 0 results. Skipping.`);
-  return [];
+  const $ = cheerio.load(html);
+  const results: SplitSignal[] = [];
+
+  $('article, .news-item, table tr').each((_i, el) => {
+    const text = $(el).text();
+    const tickerMatch = text.match(/\b([A-Z]{1,5})\b/); 
+    const ratioMatch = text.match(/(\d+)\s*[-–]?\s*for\s*[-–]?\s*(\d+)/i) || text.match(/(\d+)\s*:\s*(\d+)/);
+    const dateMatch = text.match(/(\d{4}-\d{2}-\d{2})/);
+
+    if (tickerMatch && ratioMatch) {
+      const tds = $(el).find('td');
+      if (tds.length >= 3) {
+         const t_date = $(tds[0]).text().trim();
+         const t_ticker = $(tds[1]).text().trim().toUpperCase();
+         const t_ratio = $(tds[2]).text().trim();
+         if (t_ticker && t_ratio) {
+           results.push({ ticker: t_ticker, ratio: t_ratio, source: 'StockTitan', date: normalizeDate(t_date) });
+           return;
+         }
+      }
+
+      const ticker = tickerMatch[1].toUpperCase();
+      const ratio = `${ratioMatch[1]}:${ratioMatch[2]}`;
+      let date = todayET();
+      if (dateMatch) date = dateMatch[1];
+      results.push({ ticker, ratio, source: 'StockTitan', date });
+    }
+  });
+
+  return results.filter(r => isUpcoming(r.date));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// SCRAPER 3: HEDGEFOLLOW (Best-effort — JS-rendered data, so we try to parse
-// any inline JSON or fall back gracefully)
+// SCRAPER 3: HEDGEFOLLOW
 // ═══════════════════════════════════════════════════════════════════════════════
 async function scrapeHedgeFollow(): Promise<SplitSignal[]> {
   const label = '[HedgeFollow]';
-  try {
-    const res = await fetch('https://hedgefollow.com/upcoming-stock-splits.php', {
-      headers: {
-        'User-Agent': randomUA(),
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-      next: { revalidate: 0 },
-    });
-
-    if (!res.ok) {
-      console.warn(`${label} HTTP ${res.status}`);
-      return [];
-    }
-
-    const html = await res.text();
-    const $ = cheerio.load(html);
-    const results: SplitSignal[] = [];
-
-    // HedgeFollow table headers: Stock, Exchange, Company Name, Split Ratio, 
-    //   Ratio Numerator, Ratio Denominator, Ratio Decimal, Ex-Date, Announcement Date
-    // NOTE: Table body is JS-rendered via myDataTree plugin, so tbody rows are
-    // typically empty in the raw HTML. We attempt to parse just in case
-    // server-rendering is ever enabled or partial data is inlined.
-    $('table tbody tr, #latest_splits tbody tr').each((_i, el) => {
-      const tds = $(el).find('td');
-      if (tds.length < 8) return;
-
-      const ticker = $(tds[0]).text().trim().toUpperCase();
-      const exchange = $(tds[1]).text().trim().toUpperCase();
-      const company = $(tds[2]).text().trim();
-      const ratioStr = $(tds[3]).text().trim();
-      const exDate = normalizeDate($(tds[7]).text().trim());
-
-      if (!ticker || !ratioStr) return;
-
-      results.push({ ticker, company, ratio: ratioStr, source: 'HedgeFollow', date: exDate, exchange });
-    });
-
-    // Also try to find JSON data embedded in script tags
-    $('script').each((_i, el) => {
-      const scriptText = $(el).html() || '';
-      // Look for arrays of objects with stock-split-like properties
-      const jsonArrayMatch = scriptText.match(/\[\s*\{[^]*?"(?:ticker|symbol|stock)"[^]*?\}\s*\]/);
-      if (jsonArrayMatch) {
-        try {
-          const data = JSON.parse(jsonArrayMatch[0]);
-          for (const item of data) {
-            const ticker = (item.ticker || item.symbol || item.stock || '').toUpperCase();
-            const ratio = item.ratio || item.split_ratio || `${item.numerator || '?'}:${item.denominator || '?'}`;
-            const date = normalizeDate(item.date || item.ex_date || item.exDate || '');
-            if (ticker && ratio) {
-              results.push({ ticker, ratio, source: 'HedgeFollow', date });
-            }
-          }
-        } catch { /* ignore parse errors */ }
-      }
-    });
-
-    const upcoming = results.filter(r => isUpcoming(r.date));
-    console.log(`${label} Scraped ${results.length} total, ${upcoming.length} upcoming.`);
-    return upcoming;
-
-  } catch (e: any) {
-    console.error(`${label} Error:`, e.message);
-    return [];
+  const url = 'https://hedgefollow.com/upcoming-stock-splits.php';
+  const res = await fetch(url, { headers: { 'User-Agent': randomUA() } });
+  
+  if (!res.ok && res.status === 403) {
+     console.log(`${label} 403 detected, using CapMonster + Puppeteer`);
+     const browser = await getBrowser();
+     let html = '';
+     try {
+       const page = await browser.newPage();
+       await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
+       html = await page.content();
+     } finally {
+       await browser.close();
+     }
+     
+     const $ = cheerio.load(html);
+     const results: SplitSignal[] = [];
+     $('table tbody tr, #latest_splits tbody tr').each((_i, el) => {
+       const tds = $(el).find('td');
+       if (tds.length < 8) return;
+       const ticker = $(tds[0]).text().trim().toUpperCase();
+       const company = $(tds[2]).text().trim();
+       const ratioStr = $(tds[3]).text().trim();
+       const exDate = normalizeDate($(tds[7]).text().trim());
+       if (ticker && ratioStr) {
+         results.push({ ticker, company, ratio: ratioStr, source: 'HedgeFollow', date: exDate });
+       }
+     });
+     return results.filter(r => isUpcoming(r.date));
+  } else if (!res.ok) {
+     throw new Error(`${label} HTTP ${res.status}`);
   }
+
+  const html = await res.text();
+  const $ = cheerio.load(html);
+  const results: SplitSignal[] = [];
+
+  $('table tbody tr, #latest_splits tbody tr').each((_i, el) => {
+    const tds = $(el).find('td');
+    if (tds.length < 8) return;
+    const ticker = $(tds[0]).text().trim().toUpperCase();
+    const company = $(tds[2]).text().trim();
+    const ratioStr = $(tds[3]).text().trim();
+    const exDate = normalizeDate($(tds[7]).text().trim());
+    if (ticker && ratioStr) {
+      results.push({ ticker, company, ratio: ratioStr, source: 'HedgeFollow', date: exDate });
+    }
+  });
+
+  return results.filter(r => isUpcoming(r.date));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// SCRAPER 4: TIPRANKS (Best-effort — Cloudflare-protected, will likely fail)
+// SCRAPER 4: TIPRANKS
 // ═══════════════════════════════════════════════════════════════════════════════
 async function scrapeTipRanks(): Promise<SplitSignal[]> {
   const label = '[TipRanks]';
+  const url = 'https://www.tipranks.com/calendars/stock-splits/upcoming';
+  
+  console.log(`${label} Initiating Puppeteer + CapMonster scrape...`);
+  const browser = await getBrowser();
+  let html = '';
   try {
-    const res = await fetch('https://www.tipranks.com/calendars/stock-splits', {
-      headers: {
-        'User-Agent': randomUA(),
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Referer': 'https://www.google.com/',
-      },
-      next: { revalidate: 0 },
-    });
-
-    if (!res.ok) {
-      console.warn(`${label} HTTP ${res.status}`);
-      return [];
+    const page = await browser.newPage();
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    html = await page.content();
+    
+    if (html.includes('cf-browser-verification') || html.includes('challenges.cloudflare.com') || html.includes('Just a moment')) {
+      console.log(`${label} Cloudflare challenge detected. Asking CapMonster for solution...`);
+      const solution = await solveCloudflareChallengeCookie(url, html);
+      if (solution && solution.clearanceCookie) {
+        await page.setCookie({
+            name: 'cf_clearance',
+            value: solution.clearanceCookie,
+            domain: '.tipranks.com'
+        });
+        await page.reload({ waitUntil: 'networkidle2', timeout: 20000 });
+        html = await page.content();
+      } else {
+        console.warn(`${label} CapMonster failed to solve challenge.`);
+      }
+    } else {
+       try { await page.waitForSelector('table', { timeout: 10000 }); } catch (e) {}
+       html = await page.content();
     }
-
-    const html = await res.text();
-
-    // TipRanks serves a Cloudflare challenge page — detect and bail early
-    if (html.includes('Just a moment') || html.includes('cf-browser-verification') || html.includes('challenges.cloudflare.com')) {
-      console.warn(`${label} Cloudflare challenge detected. Skipping.`);
-      return [];
-    }
-
-    const $ = cheerio.load(html);
-    const results: SplitSignal[] = [];
-
-    // If we somehow get through, parse their table
-    $('table tbody tr').each((_i, el) => {
-      const tds = $(el).find('td');
-      if (tds.length < 4) return;
-
-      const ticker = $(tds[0]).text().trim().toUpperCase();
-      const company = $(tds[1]).text().trim();
-      const ratio = $(tds[2]).text().trim();
-      const rawDate = $(tds[3]).text().trim();
-
-      if (!ticker || !ratio) return;
-      results.push({ ticker, company, ratio, source: 'TipRanks', date: normalizeDate(rawDate) });
-    });
-
-    const upcoming = results.filter(r => isUpcoming(r.date));
-    console.log(`${label} Scraped ${results.length} total, ${upcoming.length} upcoming.`);
-    return upcoming;
-
-  } catch (e: any) {
-    console.error(`${label} Error:`, e.message);
-    return [];
+  } finally {
+    await browser.close();
   }
+
+  const $ = cheerio.load(html);
+  const results: SplitSignal[] = [];
+
+  $('table tbody tr').each((_i, el) => {
+    const tds = $(el).find('td');
+    if (tds.length < 4) return;
+    const col0Text = $(tds[0]).text().trim();
+    const tickerMatch = col0Text.match(/^[A-Z]{1,5}/); 
+    const ticker = tickerMatch ? tickerMatch[0] : col0Text.split('\n')[0].toUpperCase();
+    const ratio = $(tds[1]).text().trim();
+    const rawDate = $(tds[2]).text().trim();
+
+    if (ticker && ratio && ratio.includes(':')) {
+      results.push({ ticker, ratio, source: 'TipRanks', date: normalizeDate(rawDate) });
+    }
+  });
+
+  return results.filter(r => isUpcoming(r.date));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -359,20 +330,16 @@ export async function GET(request: Request) {
     }
 
     console.log('══════════════════════════════════════════════');
-    console.log('  Split-Guardian Cron Job Triggered');
+    console.log('  Split-Guardian Cron Job Triggered (Multi-Source)');
     console.log('  Time:', new Date().toISOString());
-    console.log('  Today (ET):', todayET());
     console.log('══════════════════════════════════════════════');
 
-    // 1. Fetch All Users and their Settings
     const { data: users } = await supabase.from('users').select('*');
     if (!users || users.length === 0) {
-      console.log('No users found. Exiting.');
       return NextResponse.json({ success: true, message: 'No users configured' });
     }
 
-    // 1.5. THE HUNTER: Auto-Retry Engine (Per-User)
-    console.log('--- Checking for Pending Retries ---');
+    // 1. Fetch pending retries
     const { data: pendingRetries } = await supabase
       .from('trade_log')
       .select('*')
@@ -380,43 +347,35 @@ export async function GET(request: Request) {
       .lte('retry_at', new Date().toISOString());
 
     if (pendingRetries && pendingRetries.length > 0) {
-      console.log(`Found ${pendingRetries.length} pending trades ready for retry.`);
       for (const retry of pendingRetries) {
         const user = users.find(u => u.user_email === retry.user_email);
         if (!user || !user.alpaca_access_token) continue;
-
-        console.log(`[Retry] Attempting ${retry.ticker} for ${user.user_email}...`);
-        // We need the original order type/size. For now we use the user's current settings.
         const orderType = user.position_type === 'amount' ? 'amount' : 'quantity';
-        const tradeSize = Number(user.trade_size_dollars);
-        
-        const tradeRes = await executeMarketBuy(retry.ticker, orderType, tradeSize, user.alpaca_access_token);
-        
-        let newStatus = '';
-        if (tradeRes.success) {
-          newStatus = `Executed - Buy ${tradeRes.qty} shares`;
-          console.log(`[Retry Success] ${retry.ticker}: ${newStatus}`);
-        } else {
-          newStatus = `Skipped - Persistent Halt (${tradeRes.error.substring(0, 50)})`;
-          console.warn(`[Retry Failed] ${retry.ticker}: ${newStatus}`);
-        }
-        
-        await supabase
-          .from('trade_log')
-          .update({ execution_status: newStatus, retry_at: null })
-          .eq('id', retry.id);
+        const tradeRes = await executeMarketBuy(retry.ticker, orderType, Number(user.trade_size_dollars), user.alpaca_access_token);
+        const newStatus = tradeRes.success ? `Executed - Buy ${tradeRes.qty} shares` : `Skipped - Persistent Halt (${tradeRes.error.substring(0, 50)})`;
+        await supabase.from('trade_log').update({ execution_status: newStatus, retry_at: null }).eq('id', retry.id);
       }
-    } else {
-      console.log('No pending retries at this time.');
     }
 
-    // 2. Scrape all 4 sources concurrently (4-source redundancy)
-    const [benzingaResults, stockTitanResults, hedgeFollowResults, tipRanksResults] = await Promise.all([
+    // 2. Scrape in isolated Promise.allSettled
+    const scrapeResults = await Promise.allSettled([
       scrapeBenzinga(),
       scrapeStockTitan(),
       scrapeHedgeFollow(),
       scrapeTipRanks(),
     ]);
+
+    const benzingaResults = scrapeResults[0].status === 'fulfilled' ? scrapeResults[0].value : [];
+    const stockTitanResults = scrapeResults[1].status === 'fulfilled' ? scrapeResults[1].value : [];
+    const hedgeFollowResults = scrapeResults[2].status === 'fulfilled' ? scrapeResults[2].value : [];
+    const tipRanksResults = scrapeResults[3].status === 'fulfilled' ? scrapeResults[3].value : [];
+
+    scrapeResults.forEach((res, idx) => {
+      if (res.status === 'rejected') {
+        const sourceName = ['Benzinga', 'StockTitan', 'HedgeFollow', 'TipRanks'][idx];
+        console.error(`[Scraper Error] ${sourceName} failed:`, res.reason);
+      }
+    });
 
     const sourceReport = {
       benzinga: benzingaResults.length,
@@ -426,7 +385,7 @@ export async function GET(request: Request) {
     };
     console.log('Source Report:', JSON.stringify(sourceReport));
 
-    // 3. Merge & Deduplicate by ticker (first-seen wins)
+    // 3. Deduplicate and merge sources
     const allSignals: SplitSignal[] = [
       ...benzingaResults,
       ...stockTitanResults,
@@ -434,40 +393,37 @@ export async function GET(request: Request) {
       ...tipRanksResults,
     ];
 
-    const seenTickers = new Set<string>();
-    const deduplicated: SplitSignal[] = [];
+    const deduplicatedMap = new Map<string, SplitSignal & { sourcesArray: string[] }>();
 
     for (const signal of allSignals) {
       const key = signal.ticker.toUpperCase();
-      if (seenTickers.has(key)) {
-        console.log(`[Dedup] Skipping duplicate: ${key} from ${signal.source}`);
-        continue;
+      if (deduplicatedMap.has(key)) {
+        const existing = deduplicatedMap.get(key)!;
+        if (!existing.sourcesArray.includes(signal.source)) {
+          existing.sourcesArray.push(signal.source);
+        }
+      } else {
+        deduplicatedMap.set(key, { ...signal, sourcesArray: [signal.source] });
       }
-      seenTickers.add(key);
-      deduplicated.push(signal);
     }
 
+    const deduplicated = Array.from(deduplicatedMap.values());
     console.log(`Deduplicated: ${allSignals.length} → ${deduplicated.length} unique signals`);
 
-    // 4. Process each unique signal
+    // 4. Execute
     const processed = [];
 
     for (const signal of deduplicated) {
       const parsed = parseRatio(signal.ratio);
-      if (parsed.type === 'unknown') {
-        console.warn(`[Skip] Unknown ratio format for ${signal.ticker}: ${signal.ratio}`);
-        continue;
-      }
+      if (parsed.type === 'unknown') continue;
       const splitType = parsed.type;
+      
+      const mergedSourceString = signal.sourcesArray.join(', ');
 
-      // Per-User Execution Logic
       for (const user of users) {
-        if (!user.alpaca_access_token) continue; // Skip users without Alpaca linked
-
+        if (!user.alpaca_access_token) continue;
         const orderType = user.position_type === 'amount' ? 'amount' : 'quantity';
         const tradeSize = Number(user.trade_size_dollars);
-
-        // 24-Hour Cooldown Check
         const oneDayAgo = new Date();
         oneDayAgo.setDate(oneDayAgo.getDate() - 1);
 
@@ -478,70 +434,45 @@ export async function GET(request: Request) {
           .eq('user_email', user.user_email)
           .gte('created_at', oneDayAgo.toISOString());
 
-        if (recentTrades && recentTrades.length > 0) {
-          // Silently skip if already processed in the last 24 hours
-          console.log(`[Cooldown] ${signal.ticker} — already logged for ${user.user_email}. Exiting silently.`);
-          continue;
-        }
+        if (recentTrades && recentTrades.length > 0) continue;
 
-        // Execution Logic
         let executionStatus = 'Processed';
         let shouldLog = false;
         let retryAt = null;
 
         if (!user.is_auto_buy_enabled) {
           executionStatus = 'Skipped - Auto-Buy Disabled';
-          shouldLog = false; // Do not log to DB
         } else if (splitType === 'reverse' && !user.allow_reverse_splits) {
           executionStatus = 'Skipped - Restricted Type';
-          shouldLog = true; // Log once for manual review
+          shouldLog = true;
         } else {
-          // Forward Split or (Reverse Split + Allowed) → Execute via Alpaca
           const tradeRes = await executeMarketBuy(signal.ticker, orderType, tradeSize, user.alpaca_access_token);
-
           if (tradeRes.success) {
             executionStatus = `Executed - Buy ${tradeRes.qty} shares`;
             shouldLog = true;
           } else {
             const errStr = tradeRes.error || '';
-            
-            if (errStr.includes('ASSET_INACTIVE')) {
-              executionStatus = 'Pending - Exchange Halt';
+            if (errStr.includes('ASSET_INACTIVE') || errStr.includes('NOT_TRADABLE') || errStr.includes('Failed to fetch quote') || errStr.includes('Invalid ask price') || errStr.includes('Calculated quantity is 0') || errStr.includes('ASSET_NOT_FOUND')) {
+              executionStatus = `Pending - ${errStr.includes('ASSET_INACTIVE') ? 'Exchange Halt' : 'Market Illiquidity'}`;
               shouldLog = true;
               retryAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
-              console.warn(`[Skip - Halt] ${signal.ticker} for ${user.user_email}: Asset Inactive`);
-            } else if (errStr.includes('NOT_TRADABLE')) {
-              executionStatus = 'Pending - OTC Restricted';
-              shouldLog = true;
-              retryAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
-              console.warn(`[Skip - OTC] ${signal.ticker} for ${user.user_email}: Not Tradable`);
-            } else if (errStr.includes('Failed to fetch quote') || errStr.includes('Invalid ask price') || errStr.includes('Calculated quantity is 0') || errStr.includes('ASSET_NOT_FOUND')) {
-              executionStatus = 'Pending - Market Illiquidity';
-              shouldLog = true;
-              retryAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
-              console.warn(`[Skip - Price] ${signal.ticker} for ${user.user_email}: ${errStr.substring(0, 50)}`);
             } else {
-              // High-priority issue (e.g. Insufficient funds, API key)
               executionStatus = `Failed - ${errStr.substring(0, 50)}`;
               shouldLog = true;
-              console.error(`[Trade Failed] ${signal.ticker} for ${user.user_email}: ${errStr}`);
             }
           }
         }
 
-        // Log to Supabase only if it's a meaningful action
         if (shouldLog) {
           const payload: any = {
             user_email: user.user_email,
             ticker: signal.ticker,
             split_ratio: signal.ratio,
-            source_site: signal.source,
+            source_site: mergedSourceString,
             split_type: splitType,
             execution_status: executionStatus,
           };
-          if (retryAt) {
-            payload.retry_at = retryAt;
-          }
+          if (retryAt) payload.retry_at = retryAt;
           await supabase.from('trade_log').insert(payload);
         }
 
@@ -551,16 +482,11 @@ export async function GET(request: Request) {
           split_type: splitType,
           ratio: signal.ratio,
           date: signal.date,
-          source: signal.source,
+          sources: signal.sourcesArray,
           status: executionStatus,
         });
-        console.log(`[Processed] ${user.user_email} | ${signal.ticker} | ${splitType} ${signal.ratio} | ${executionStatus}`);
       }
     }
-
-    console.log('══════════════════════════════════════════════');
-    console.log(`  Cron Complete: ${processed.length} signals processed`);
-    console.log('══════════════════════════════════════════════');
 
     return NextResponse.json({
       success: true,
