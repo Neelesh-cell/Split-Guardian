@@ -18,9 +18,6 @@ export default function Home() {
           </span>
         </div>
         <div className="flex gap-4">
-          <Link href="/connect" className="text-sm font-semibold text-gray-300 hover:text-white transition-colors py-2 px-4">
-            Sign In
-          </Link>
           <Link href="/connect" className="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white py-2 px-5 rounded-lg transition-colors border border-indigo-500 shadow-lg shadow-indigo-500/20">
             Get Started
           </Link>
@@ -35,7 +32,7 @@ export default function Home() {
         </div>
 
         <div className="relative z-10 max-w-4xl space-y-8">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm font-bold uppercase tracking-widest mb-4">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm font-bold uppercase tracking-widest mb-8">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
@@ -43,7 +40,7 @@ export default function Home() {
             Live Institutional Grade Execution
           </div>
           
-          <h1 className="text-5xl md:text-7xl font-extrabold tracking-tighter text-white leading-[1.1]">
+          <h1 className="text-5xl md:text-7xl font-extrabold tracking-tighter text-white leading-none md:leading-[1.1]">
             Automated Stock Split Execution for <span className="bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">Professional Portfolios</span>
           </h1>
           
@@ -64,6 +61,17 @@ export default function Home() {
             >
               Explore Features
             </a>
+          </div>
+
+          {/* Trust & Social Proof Section */}
+          <div className="pt-16 pb-4">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-6">Enterprise-Grade Data Sources</p>
+            <div className="flex flex-wrap justify-center items-center gap-6 md:gap-12 opacity-60 grayscale hover:grayscale-0 hover:opacity-100 transition-all duration-500">
+              <span className="text-xl md:text-2xl font-black tracking-tighter text-gray-300">BENZINGA</span>
+              <span className="text-xl md:text-2xl font-black tracking-tighter text-gray-300">TipRanks</span>
+              <span className="text-xl md:text-2xl font-black tracking-tighter text-gray-300">StockTitan</span>
+              <span className="text-xl md:text-2xl font-black tracking-tighter text-gray-300">HedgeFollow</span>
+            </div>
           </div>
         </div>
       </main>
