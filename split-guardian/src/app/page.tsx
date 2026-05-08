@@ -45,7 +45,7 @@ export default function Home() {
           </h1>
           
           <p className="text-lg md:text-xl text-gray-400 max-w-2xl mx-auto font-medium leading-relaxed">
-            Eliminate human latency. Split-Guardian automatically detects and acts on forward and reverse stock splits using predefined sizing rules directly inside your Alpaca brokerage account.
+            Eliminate human latency. Split-Guardian automatically detects and executes on stock splits using your precise sizing rules.
           </p>
           
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-8">
@@ -57,7 +57,7 @@ export default function Home() {
             </Link>
             <a 
               href="#features" 
-              className="w-full sm:w-auto text-lg font-semibold px-10 py-4 rounded-xl transition-all border border-gray-700 bg-gray-900/50 hover:bg-gray-800 text-gray-300 backdrop-blur-sm"
+              className="w-full sm:w-auto text-lg font-semibold px-10 py-4 rounded-xl transition-all border-2 border-indigo-500/30 text-indigo-400 hover:border-indigo-500/80 hover:bg-indigo-500/10 backdrop-blur-sm"
             >
               Explore Features
             </a>
@@ -65,12 +65,15 @@ export default function Home() {
 
           {/* Trust & Social Proof Section */}
           <div className="pt-16 pb-4">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-6">Enterprise-Grade Data Sources</p>
-            <div className="flex flex-wrap justify-center items-center gap-6 md:gap-12 opacity-60 grayscale hover:grayscale-0 hover:opacity-100 transition-all duration-500">
-              <span className="text-xl md:text-2xl font-black tracking-tighter text-gray-300">BENZINGA</span>
-              <span className="text-xl md:text-2xl font-black tracking-tighter text-gray-300">TipRanks</span>
-              <span className="text-xl md:text-2xl font-black tracking-tighter text-gray-300">StockTitan</span>
-              <span className="text-xl md:text-2xl font-black tracking-tighter text-gray-300">HedgeFollow</span>
+            <div className="bg-gray-900/40 backdrop-blur-md border border-gray-800/60 rounded-2xl p-6 md:p-8 max-w-5xl mx-auto">
+              <h2 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-1">Enterprise-Grade Data Sources</h2>
+              <p className="text-sm text-gray-500 mb-8">Real-time split signals sourced from institutional-grade providers.</p>
+              <div className="flex flex-wrap justify-center items-center gap-8 md:gap-16 opacity-60 grayscale hover:grayscale-0 hover:opacity-100 transition-all duration-500">
+                <span className="text-xl md:text-2xl font-black tracking-tighter text-gray-300">BENZINGA</span>
+                <span className="text-xl md:text-2xl font-black tracking-tighter text-gray-300">TipRanks</span>
+                <span className="text-xl md:text-2xl font-black tracking-tighter text-gray-300">StockTitan</span>
+                <span className="text-xl md:text-2xl font-black tracking-tighter text-gray-300">HedgeFollow</span>
+              </div>
             </div>
           </div>
         </div>
@@ -81,21 +84,21 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-3 gap-8 text-left">
           <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800 p-8 rounded-2xl hover:border-indigo-500/50 transition-colors group">
             <div className="w-12 h-12 bg-indigo-500/10 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-              <svg className="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+              <svg className="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
             </div>
             <h3 className="text-xl font-bold text-white mb-3">Zero Latency Execution</h3>
             <p className="text-gray-400">Our Hunter background script triggers trades the millisecond a split signal is verified on the market.</p>
           </div>
           <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800 p-8 rounded-2xl hover:border-cyan-500/50 transition-colors group">
             <div className="w-12 h-12 bg-cyan-500/10 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-              <svg className="w-6 h-6 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+              <svg className="w-6 h-6 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
             </div>
             <h3 className="text-xl font-bold text-white mb-3">Risk Protection</h3>
             <p className="text-gray-400">Strictly isolated, multi-tenant execution ensures your portfolio settings are respected without fail.</p>
           </div>
           <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800 p-8 rounded-2xl hover:border-emerald-500/50 transition-colors group">
             <div className="w-12 h-12 bg-emerald-500/10 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-              <svg className="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              <svg className="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
             </div>
             <h3 className="text-xl font-bold text-white mb-3">Sizing Mastery</h3>
             <p className="text-gray-400">Dynamically scale trades by fractional dollars or exact quantities to fit your trading style.</p>
