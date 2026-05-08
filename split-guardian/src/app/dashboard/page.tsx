@@ -8,6 +8,17 @@ import { supabase } from '@/utils/supabase';
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
 
+const getBadge = (source: string) => {
+  switch (source) {
+    case 'Benzinga': return <span key={source} className="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase">BZ</span>;
+    case 'StockTitan': return <span key={source} className="bg-purple-500/10 text-purple-400 border border-purple-500/20 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase">ST</span>;
+    case 'HedgeFollow': return <span key={source} className="bg-orange-500/10 text-orange-400 border border-orange-500/20 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase">HF</span>;
+    case 'TipRanks': return <span key={source} className="bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase">TR</span>;
+    case 'Manual': return <span key={source} className="bg-rose-500/10 text-rose-400 border border-rose-500/20 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase">MN</span>;
+    default: return <span key={source} className="bg-gray-500/10 text-gray-400 border border-gray-500/20 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase">{source.substring(0,2)}</span>;
+  }
+};
+
 export default function DashboardPage() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
@@ -485,6 +496,7 @@ export default function DashboardPage() {
                     <th className="pb-3 px-4 font-semibold hidden md:table-cell">Date</th>
                     <th className="pb-3 px-4 font-semibold">Time</th>
                     <th className="pb-3 px-4 font-semibold">Ticker</th>
+                    <th className="pb-3 px-4 font-semibold">Sources</th>
                     <th className="pb-3 px-4 font-semibold">Type</th>
                     <th className="pb-3 px-4 font-semibold">Ratio</th>
                     <th className="pb-3 px-4 font-semibold">Status</th>
@@ -493,12 +505,16 @@ export default function DashboardPage() {
                 </thead>
                 <tbody className="divide-y divide-gray-800/50">
                   {trades.length === 0 ? (
-                    <tr><td colSpan={7} className="py-8 text-center text-gray-500">No signals logged yet.</td></tr>
+                    <tr><td colSpan={8} className="py-8 text-center text-gray-500">No signals logged yet.</td></tr>
                   ) : trades.map((t) => {
                     const d = new Date(t.created_at);
                     const time = new Intl.DateTimeFormat('default', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(d);
                     const date = new Intl.DateTimeFormat('default', { month: 'short', day: 'numeric' }).format(d);
                     const isToday = new Date().toDateString() === d.toDateString();
+
+                    const sources = Array.isArray(t.sources) ? t.sources : typeof t.source_site === 'string' ? t.source_site.split(',').map((s: string) => s.trim()) : [];
+                    const isGold = sources.length >= 3;
+                    const isVerified = sources.length > 1;
 
                     return (
                       <tr key={t.id} className="hover:bg-gray-800/20 transition-colors">
@@ -508,7 +524,23 @@ export default function DashboardPage() {
                           <span>{time}</span>
                           {isToday && <span className="ml-2 text-[10px] font-bold text-emerald-500 uppercase tracking-wider bg-emerald-500/10 px-1.5 py-0.5 rounded">Today</span>}
                         </td>
-                        <td className="py-3 px-4 font-bold text-white">{t.ticker}</td>
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`font-extrabold ${isGold ? 'text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.8)]' : 'text-white'}`}>
+                              {t.ticker}
+                            </span>
+                            {isVerified && (
+                              <svg className="w-4 h-4 text-emerald-400 drop-shadow-md" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                              </svg>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="flex flex-wrap gap-1">
+                            {sources.map((s: string) => getBadge(s))}
+                          </div>
+                        </td>
                         <td className="py-3 px-4">
                           <span className={`px-2 py-1 rounded text-xs font-medium ${t.split_type === 'forward' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
                             {t.split_type}

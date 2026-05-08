@@ -26,7 +26,7 @@ CREATE TABLE trade_log (
   user_email text not null references users(user_email) on delete cascade,
   ticker text not null,
   split_ratio text not null,
-  source_site text not null,
+  sources text[] default '{}' not null,
   split_type split_type not null,
   execution_status text not null,
   retry_at timestamp with time zone,

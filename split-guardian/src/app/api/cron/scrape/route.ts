@@ -84,7 +84,6 @@ async function getBrowser() {
       'https://github.com/Sparticuz/chromium/releases/download/v131.0.1/chromium-v131.0.1-pack.tar'
     ),
     headless: chromium.headless,
-    ignoreHTTPSErrors: true,
   });
 }
 
@@ -418,7 +417,6 @@ export async function GET(request: Request) {
       if (parsed.type === 'unknown') continue;
       const splitType = parsed.type;
       
-      const mergedSourceString = signal.sourcesArray.join(', ');
 
       for (const user of users) {
         if (!user.alpaca_access_token) continue;
@@ -429,12 +427,29 @@ export async function GET(request: Request) {
 
         const { data: recentTrades } = await supabase
           .from('trade_log')
-          .select('id')
+          .select('id, sources')
           .eq('ticker', signal.ticker)
           .eq('user_email', user.user_email)
           .gte('created_at', oneDayAgo.toISOString());
 
-        if (recentTrades && recentTrades.length > 0) continue;
+        if (recentTrades && recentTrades.length > 0) {
+          const recentRow = recentTrades[0];
+          const currentSources = Array.isArray(recentRow.sources) ? recentRow.sources : [];
+          let hasNew = false;
+          const newSources = [...currentSources];
+          
+          for (const s of signal.sourcesArray) {
+            if (!newSources.includes(s)) {
+              newSources.push(s);
+              hasNew = true;
+            }
+          }
+
+          if (hasNew) {
+            await supabase.from('trade_log').update({ sources: newSources }).eq('id', recentRow.id);
+          }
+          continue;
+        }
 
         let executionStatus = 'Processed';
         let shouldLog = false;
@@ -468,7 +483,7 @@ export async function GET(request: Request) {
             user_email: user.user_email,
             ticker: signal.ticker,
             split_ratio: signal.ratio,
-            source_site: mergedSourceString,
+            sources: signal.sourcesArray,
             split_type: splitType,
             execution_status: executionStatus,
           };

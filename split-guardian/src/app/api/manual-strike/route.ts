@@ -59,6 +59,17 @@ export async function POST(request: Request) {
       qty: userRes.qty
     };
 
+    // Log the manual trade
+    const payload: any = {
+      user_email: email,
+      ticker: ticker,
+      split_ratio: 'N/A',
+      sources: ['Manual'],
+      split_type: 'forward',
+      execution_status: userRes.success ? `Executed - ${action} ${userRes.qty} shares` : `Failed - ${userRes.error?.substring(0, 50) || 'Unknown'}`,
+    };
+    await supabase.from('trade_log').insert(payload);
+
     if (userRes.success) {
       return NextResponse.json({
         success: true,
