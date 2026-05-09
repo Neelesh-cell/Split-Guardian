@@ -27,8 +27,14 @@ export async function POST(request: Request) {
     let { data: user, error } = await supabase.from('users').select('*').eq('user_email', email).single();
     if (error || !user) {
       if (isDev) {
-        console.warn('Dev user not found in DB, proceeding with local fallback.');
-        user = { user_email: email, alpaca_access_token: null, alpaca_account_id: 'dev_account' };
+        console.warn('Dev user not found in DB, attempting to create...');
+        const { data: newUser, error: insertError } = await supabase.from('users').upsert({ user_email: email }, { onConflict: 'user_email' }).select().single();
+        if (!insertError && newUser) {
+          user = newUser;
+        } else {
+          console.warn('Failed to create dev user, proceeding with local fallback.', insertError);
+          user = { user_email: email, alpaca_access_token: null, alpaca_account_id: 'dev_account' };
+        }
       } else {
         console.error(`User not found for email ${email}`);
         return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });

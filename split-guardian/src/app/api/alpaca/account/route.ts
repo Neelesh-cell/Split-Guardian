@@ -21,7 +21,7 @@ export async function GET(request: Request) {
     // If user doesn't exist but it's the dev email, create the record so settings can be saved
     if (userError || !user) {
       if (isDev) {
-        const { data: newUser, error: insertError } = await supabase.from('users').insert({ user_email: email }).select().single();
+        const { data: newUser, error: insertError } = await supabase.from('users').upsert({ user_email: email }, { onConflict: 'user_email' }).select().single();
         if (!insertError && newUser) {
           user = newUser;
         } else {
