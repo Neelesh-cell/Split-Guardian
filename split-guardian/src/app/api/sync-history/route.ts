@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     const tokenToUse = (isDev && !user.alpaca_access_token) ? undefined : user.alpaca_access_token;
 
     // 1. Fetch Alpaca Orders
-    const orders = await getAlpacaOrders(tokenToUse, 20);
+    const orders = await getAlpacaOrders(tokenToUse, 100);
     const filledOrders = orders.filter((o: any) => o.status === 'filled');
 
     // 2. Fetch existing Supabase trade log
