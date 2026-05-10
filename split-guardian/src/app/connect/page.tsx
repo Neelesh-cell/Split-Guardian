@@ -66,12 +66,12 @@ export default function ConnectPage() {
             className="w-full bg-gray-950 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition-colors shadow-inner"
           />
 
-          <div className="bg-red-950/20 border border-red-900/50 p-5 rounded-xl text-left space-y-4">
-            <p className="text-sm text-red-500 font-bold">Authorize Split-Guardian</p>
-            <p className="text-xs text-red-500 leading-relaxed">
+          <div className="bg-gray-800/30 border border-blue-500/30 p-5 rounded-xl text-left space-y-4">
+            <p className="text-sm text-cyan-400 font-bold">Authorize Split-Guardian</p>
+            <p className="text-xs text-slate-200 leading-relaxed">
               By allowing Split-Guardian to access your Alpaca account, you are granting Split-Guardian access to your account information and authorization to place transactions at your direction.
             </p>
-            <p className="text-xs text-red-500 leading-relaxed">
+            <p className="text-xs text-slate-200 leading-relaxed">
               Alpaca does not warrant or guarantee that Split-Guardian will work as advertised or expected. Before authorizing, learn more about Split-Guardian.
             </p>
           </div>
@@ -79,13 +79,13 @@ export default function ConnectPage() {
           <div className="flex gap-4">
             <button 
               onClick={() => router.push('/')}
-              className="flex-1 font-bold py-3.5 rounded-xl transition-all border border-gray-700 bg-gray-800 hover:bg-gray-700 text-white"
+              className="flex-1 font-bold py-3.5 rounded-xl transition-all border border-gray-700 bg-transparent hover:bg-gray-800 text-gray-400 hover:text-white"
             >
               DENY
             </button>
             <button 
               onClick={handleConnect}
-              className="flex-1 font-bold py-3.5 rounded-xl transition-all border border-red-500 bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-500/20"
+              className="flex-1 font-bold py-3.5 rounded-xl transition-all bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-lg shadow-indigo-500/25"
             >
               ALLOW
             </button>
