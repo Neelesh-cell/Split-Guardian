@@ -40,6 +40,18 @@ export async function getAlpacaPositions(accessToken?: string) {
   return res.json();
 }
 
+export async function getAlpacaOrders(accessToken?: string, limit: number = 20) {
+  const res = await fetch(`${ALPACA_BASE_URL}/v2/orders?status=all&limit=${limit}&direction=desc`, {
+    headers: getHeaders(accessToken),
+    cache: 'no-store'
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to fetch Alpaca orders: ${await res.text()}`);
+  }
+  return res.json();
+}
+
 export async function getAsset(ticker: string, accessToken?: string) {
   const res = await fetch(`${ALPACA_BASE_URL}/v2/assets/${ticker}`, {
     headers: getHeaders(accessToken),

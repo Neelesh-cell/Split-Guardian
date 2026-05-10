@@ -15,6 +15,7 @@ const getBadge = (source: string) => {
     case 'HedgeFollow': return <span key={source} className="bg-orange-500/10 text-orange-400 border border-orange-500/20 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase">HF</span>;
     case 'TipRanks': return <span key={source} className="bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase">TR</span>;
     case 'Manual': return <span key={source} className="bg-rose-500/10 text-rose-400 border border-rose-500/20 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase">MN</span>;
+    case 'Alpaca Sync': return <span key={source} className="bg-gray-500/10 text-gray-400 border border-gray-500/20 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase">AS</span>;
     default: return <span key={source} className="bg-gray-500/10 text-gray-400 border border-gray-500/20 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase">{source.substring(0,2)}</span>;
   }
 };
@@ -32,6 +33,7 @@ export default function DashboardPage() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [localTradeSize, setLocalTradeSize] = useState<string>('100');
+  const [isSyncingHistory, setIsSyncingHistory] = useState(false);
 
   // Manual Strike State
   const [msTicker, setMsTicker] = useState('');
@@ -159,6 +161,29 @@ export default function DashboardPage() {
       alert('Failed to save settings. Check your database permissions.');
     } finally {
       setSavingSettings(false);
+    }
+  };
+
+  const executeHistorySync = async () => {
+    if (!sessionEmail) return;
+    setIsSyncingHistory(true);
+    try {
+      const res = await fetch('/api/sync-history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: sessionEmail })
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert(data.summary);
+        fetchDashboardData(true);
+      } else {
+        alert(`Error syncing history: ${data.error}`);
+      }
+    } catch (e: any) {
+      alert(`Sync failed: ${e.message}`);
+    } finally {
+      setIsSyncingHistory(false);
     }
   };
 
@@ -388,6 +413,13 @@ export default function DashboardPage() {
                   className={`w-full font-medium py-2 rounded-lg transition-colors border ${isSyncing ? 'bg-gray-700 text-gray-400 border-gray-600 cursor-not-allowed' : 'bg-gray-800 hover:bg-gray-700 text-white border-gray-700'}`}
                 >
                   {isSyncing ? 'Syncing...' : 'Force Refresh Sync'}
+                </button>
+                <button 
+                  onClick={executeHistorySync}
+                  disabled={isSyncingHistory}
+                  className={`w-full font-medium py-2 rounded-lg transition-colors border ${isSyncingHistory ? 'bg-gray-700 text-gray-400 border-gray-600 cursor-not-allowed' : 'bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border-indigo-500/20'}`}
+                >
+                  {isSyncingHistory ? 'Syncing History...' : 'Fetch Alpaca History'}
                 </button>
               </div>
             </div>
