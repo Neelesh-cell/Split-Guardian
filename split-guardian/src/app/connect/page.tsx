@@ -66,25 +66,30 @@ export default function ConnectPage() {
             className="w-full bg-gray-950 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition-colors shadow-inner"
           />
 
-          <div className="bg-gray-800/30 border border-gray-700/50 p-4 rounded-xl text-left space-y-2">
-            <p className="text-[11px] text-gray-400 font-semibold mb-1">By connecting to Alpaca, you acknowledge:</p>
-            <p className="text-[11px] text-gray-400 leading-relaxed">
-              <strong>Access:</strong> Split-Guardian will have access to your account info and authorization to place trades at your direction.
+          <div className="bg-red-950/20 border border-red-900/50 p-5 rounded-xl text-left space-y-4">
+            <p className="text-sm text-red-500 font-bold">Authorize Split-Guardian</p>
+            <p className="text-xs text-red-500 leading-relaxed">
+              By allowing Split-Guardian to access your Alpaca account, you are granting Split-Guardian access to your account information and authorization to place transactions at your direction.
             </p>
-            <p className="text-[11px] text-gray-400 leading-relaxed">
-              <strong>No Guarantee:</strong> Alpaca does not warrant or guarantee that Split-Guardian will perform as advertised or expected.
-            </p>
-            <p className="text-[11px] text-gray-400 leading-relaxed">
-              <strong>Due Diligence:</strong> Please ensure you learn more about Split-Guardian before authorizing.
+            <p className="text-xs text-red-500 leading-relaxed">
+              Alpaca does not warrant or guarantee that Split-Guardian will work as advertised or expected. Before authorizing, learn more about Split-Guardian.
             </p>
           </div>
 
-          <button 
-            onClick={handleConnect}
-            className="w-full font-bold py-3.5 rounded-xl transition-all border border-indigo-500 bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20"
-          >
-            Connect to Alpaca
-          </button>
+          <div className="flex gap-4">
+            <button 
+              onClick={() => router.push('/')}
+              className="flex-1 font-bold py-3.5 rounded-xl transition-all border border-gray-700 bg-gray-800 hover:bg-gray-700 text-white"
+            >
+              DENY
+            </button>
+            <button 
+              onClick={handleConnect}
+              className="flex-1 font-bold py-3.5 rounded-xl transition-all border border-red-500 bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-500/20"
+            >
+              ALLOW
+            </button>
+          </div>
         </div>
       </div>
 
